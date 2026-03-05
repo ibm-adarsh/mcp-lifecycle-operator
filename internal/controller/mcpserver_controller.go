@@ -21,10 +21,10 @@ package controller
 
 import (
 	"context"
-	"reflect"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -105,12 +105,15 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		log.Error(err, "Failed to get Deployment")
 		return ctrl.Result{}, err
 	} else {
-		needsUpdate := !reflect.DeepEqual(existingDeployment.Spec.Template.Spec.Containers, deployment.Spec.Template.Spec.Containers) ||
-			!reflect.DeepEqual(existingDeployment.Spec.Template.Spec.Volumes, deployment.Spec.Template.Spec.Volumes) ||
-			existingDeployment.Spec.Template.Spec.ServiceAccountName != deployment.Spec.Template.Spec.ServiceAccountName
+		oldPodSpec := existingDeployment.Spec.Template.Spec
+		newPodSpec := deployment.Spec.Template.Spec
+		needsUpdate := !equality.Semantic.DeepDerivative(newPodSpec, oldPodSpec) ||
+			!equality.Semantic.DeepDerivative(oldPodSpec.Containers[0].Env, newPodSpec.Containers[0].Env) ||
+			!equality.Semantic.DeepDerivative(oldPodSpec.Containers[0].EnvFrom, newPodSpec.Containers[0].EnvFrom)
 		if needsUpdate {
-			log.Info("Updating Deployment", "name", deployment.Name)
-			if err := r.Update(ctx, deployment); err != nil {
+			log.Info("Updating Deployment", "name", existingDeployment.Name)
+			existingDeployment.Spec.Template.Spec = deployment.Spec.Template.Spec
+			if err := r.Update(ctx, existingDeployment); err != nil {
 				log.Error(err, "Failed to update Deployment")
 				return ctrl.Result{}, err
 			}
