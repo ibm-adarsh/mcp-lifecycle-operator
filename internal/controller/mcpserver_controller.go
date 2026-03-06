@@ -202,14 +202,19 @@ func (r *MCPServerReconciler) reconcileDeployment(
 ) (*appsv1.Deployment, error) {
 	logger := log.FromContext(ctx)
 
-	deployment := r.createDeployment(mcpServer)
+	deployment, err := r.createDeployment(ctx, mcpServer)
+	if err != nil {
+		logger.Error(err, "Failed to create Deployment")
+		r.updateStatusFailed(ctx, mcpServer, "Failed to create Deployment")
+		return nil, err
+	}
 	if err := controllerutil.SetControllerReference(mcpServer, deployment, r.Scheme); err != nil {
 		logger.Error(err, "Failed to set controller reference for Deployment")
 		return nil, err
 	}
 
 	existingDeployment := &appsv1.Deployment{}
-	err := r.Get(ctx, client.ObjectKey{Name: deployment.Name, Namespace: deployment.Namespace}, existingDeployment)
+	err = r.Get(ctx, client.ObjectKey{Name: deployment.Name, Namespace: deployment.Namespace}, existingDeployment)
 	if err != nil && apierrors.IsNotFound(err) {
 		logger.Info("Creating Deployment", "name", deployment.Name)
 		if err := r.Create(ctx, deployment); err != nil {
@@ -314,11 +319,10 @@ func (r *MCPServerReconciler) createDeployment(ctx context.Context, mcpServer *m
 		}
 		if secretKey := mcpServer.Spec.SecretKey; secretKey != "" {
 			if mcpServer.Spec.SecretMountPath == "" {
-				log.FromContext(ctx).Info("Warning: secretKey is set without secretMountPath; the default path will be used as a file, not a directory",
-					"secretKey", secretKey, "defaultMountPath", "/etc/mcp-secrets")
+				return nil, fmt.Errorf("secretMountPath must be specified when secretKey is set")
 			}
 			if _, ok := existingSecret.Data[secretKey]; !ok {
-				return nil, fmt.Errorf("secret key %s not found in secret %s/%s", secretKey, mcpServer.Spec.SecretRef.Name, mcpServer.Namespace)
+				return nil, fmt.Errorf("secret key %s not found in secret %s/%s", secretKey, mcpServer.Namespace, mcpServer.Spec.SecretRef.Name)
 			}
 			volumeMount.SubPath = secretKey
 		}

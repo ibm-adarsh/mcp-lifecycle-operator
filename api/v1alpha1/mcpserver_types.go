@@ -98,7 +98,6 @@ type MCPServerSpec struct {
 	// The keys become the variable names. Useful when a Secret's keys already match
 	// the expected env var names (e.g., GITHUB_TOKEN).
 	// +optional
-
 	EnvFrom []corev1.EnvFromSource `json:"envFrom,omitempty"`
 
 	// PodSecurityContext specifies the security context for the MCP server pod.

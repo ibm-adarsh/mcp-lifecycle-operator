@@ -566,7 +566,7 @@ spec:
               secretMountPath:
                 description: |-
                   SecretMountPath specifies the path where the Secret should be mounted.
-                  Only used when SecretRef is set
+                  Only used when SecretRef is set. Defaults to /etc/mcp-secrets if not specified.
                 type: string
               secretRef:
                 description: |-
@@ -574,6 +574,7 @@ spec:
                   The Secret will be mounted as a read-only volume.
                   Use SecretMountPath to specify where to mount it.
                   Use SecretVolumeName to specify the volume name.
+                  Use SecretKey to specify the key of the Secret to mount.
                 properties:
                   name:
                     default: ""
@@ -589,7 +590,7 @@ spec:
               secretVolumeName:
                 description: |-
                   SecretVolumeName specifies the name of the volume for the Secret mount.
-                  Only used when SecretRef is set.
+                  Only used when SecretRef is set. Defaults to mcp-secrets if not specified.
                 type: string
               securityContext:
                 description: SecurityContext specifies the security context for the
