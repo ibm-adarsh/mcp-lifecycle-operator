@@ -121,7 +121,7 @@ type MCPServerSpec struct {
 	SecretMountPath string `json:"secretMountPath,omitempty"`
 
 	// SecretVolumeName specifies the name of the volume for the Secret mount.
-	// Only used when SecretRef is set.
+	// Only used when SecretRef is set. Defaults to mcp-secrets if not specified.
 	// +optional
 	SecretVolumeName string `json:"secretVolumeName,omitempty"`
 }
