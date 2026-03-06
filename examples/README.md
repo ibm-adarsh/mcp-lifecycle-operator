@@ -11,6 +11,12 @@ See [kubernetes-mcp-server/README.md](./kubernetes-mcp-server/README.md) for:
 - ConfigMap-based configuration
 - Testing and verification
 
+## everything-mcp-server
+
+Deploys the [Everything MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/everything), one of the reference servers from the Model Context Protocol project that exercises all MCP features.
+
+See [everything-mcp-server/README.md](./everything-mcp-server/README.md) for details.
+
 ## Quick Start
 
 ```bash
