@@ -233,7 +233,9 @@ func (r *MCPServerReconciler) reconcileDeployment(
 		!equality.Semantic.DeepEqual(oldPodSpec.Containers[0].Env, newPodSpec.Containers[0].Env) ||
 		!equality.Semantic.DeepEqual(oldPodSpec.Containers[0].EnvFrom, newPodSpec.Containers[0].EnvFrom) ||
 		!equality.Semantic.DeepEqual(oldPodSpec.Containers[0].SecurityContext, newPodSpec.Containers[0].SecurityContext) ||
-		!equality.Semantic.DeepEqual(oldPodSpec.SecurityContext, newPodSpec.SecurityContext)
+		!equality.Semantic.DeepEqual(oldPodSpec.SecurityContext, newPodSpec.SecurityContext) ||
+		!equality.Semantic.DeepEqual(oldPodSpec.Volumes, newPodSpec.Volumes) ||
+		!equality.Semantic.DeepEqual(oldPodSpec.Containers[0].VolumeMounts, newPodSpec.Containers[0].VolumeMounts)
 	if needsUpdate {
 		logger.Info("Updating Deployment", "name", existingDeployment.Name)
 		existingDeployment.Spec.Template.Spec = deployment.Spec.Template.Spec
@@ -291,7 +293,7 @@ func (r *MCPServerReconciler) createDeployment(ctx context.Context, mcpServer *m
 	// Add volume mount if SecretRef is specified
 	if mcpServer.Spec.SecretRef != nil {
 
-		if err := r.Get(ctx, client.ObjectKey{Name: mcpServer.Spec.SecretRef.Name, Namespace: mcpServer.Namespace}, &corev1.Secret{}); err != nil && apierrors.IsNotFound(err) {
+		if err := r.Get(ctx, client.ObjectKey{Name: mcpServer.Spec.SecretRef.Name, Namespace: mcpServer.Namespace}, &corev1.Secret{}); err != nil {
 			return nil, err
 		}
 
