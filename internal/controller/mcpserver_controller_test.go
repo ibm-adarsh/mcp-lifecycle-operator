@@ -374,3 +374,69 @@ var _ = Describe("MCPServer Controller - reconcileDeployment", func() {
 		Expect(deployment).NotTo(BeNil())
 	})
 })
+
+var _ = Describe("MCPServer Controller - reconcileService", func() {
+	const resourceName = "test-reconcile-service"
+
+	ctx := context.Background()
+
+	typeNamespacedName := types.NamespacedName{
+		Name:      resourceName,
+		Namespace: "default",
+	}
+
+	BeforeEach(func() {
+		resource := &mcpv1alpha1.MCPServer{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      resourceName,
+				Namespace: "default",
+			},
+			Spec: mcpv1alpha1.MCPServerSpec{
+				Image: "test-image:latest",
+				Port:  8080,
+			},
+		}
+		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+	})
+
+	AfterEach(func() {
+		resource := &mcpv1alpha1.MCPServer{}
+		err := k8sClient.Get(ctx, typeNamespacedName, resource)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+	})
+
+	It("should create a service when none exists", func() {
+		mcpServer := &mcpv1alpha1.MCPServer{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
+
+		reconciler := &MCPServerReconciler{
+			Client: k8sClient,
+			Scheme: k8sClient.Scheme(),
+		}
+
+		err := reconciler.reconcileService(ctx, mcpServer)
+		Expect(err).NotTo(HaveOccurred())
+
+		svc := &corev1.Service{}
+		err = k8sClient.Get(ctx, client.ObjectKey{
+			Name:      resourceName,
+			Namespace: "default",
+		}, svc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(svc.Name).To(Equal(resourceName))
+	})
+
+	It("should not error when service already exists", func() {
+		mcpServer := &mcpv1alpha1.MCPServer{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
+
+		reconciler := &MCPServerReconciler{
+			Client: k8sClient,
+			Scheme: k8sClient.Scheme(),
+		}
+
+		Expect(reconciler.reconcileService(ctx, mcpServer)).To(Succeed())
+		Expect(reconciler.reconcileService(ctx, mcpServer)).To(Succeed())
+	})
+})

@@ -94,32 +94,15 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	// Create or update Service
-	service := r.createService(mcpServer)
-	if err := controllerutil.SetControllerReference(mcpServer, service, r.Scheme); err != nil {
-		logger.Error(err, "Failed to set controller reference for Service")
+	// Reconcile Service
+	if err := r.reconcileService(ctx, mcpServer); err != nil {
+		r.updateStatusFailed(ctx, mcpServer, "Failed to reconcile Service")
 		return ctrl.Result{}, err
-	}
-
-	existingService := &corev1.Service{}
-	err = r.Get(ctx, client.ObjectKey{Name: service.Name, Namespace: service.Namespace}, existingService)
-	if err != nil && apierrors.IsNotFound(err) {
-		logger.Info("Creating Service", "name", service.Name)
-		if err := r.Create(ctx, service); err != nil {
-			logger.Error(err, "Failed to create Service")
-			r.updateStatusFailed(ctx, mcpServer, "Failed to create Service")
-			return ctrl.Result{}, err
-		}
-	} else if err != nil {
-		logger.Error(err, "Failed to get Service")
-		return ctrl.Result{}, err
-	} else {
-		logger.Info("Service already exists", "name", service.Name)
 	}
 
 	// Update status based on Deployment status
 	mcpServer.Status.DeploymentName = existingDeployment.Name
-	mcpServer.Status.ServiceName = service.Name
+	mcpServer.Status.ServiceName = mcpServer.Name
 
 	// Check Deployment status to determine MCPServer phase
 	deploymentAvailable := false
@@ -344,6 +327,37 @@ func (r *MCPServerReconciler) createDeployment(mcpServer *mcpv1alpha1.MCPServer)
 	}
 
 	return deployment
+}
+
+// reconcileService creates the Service for the MCPServer if it doesn't exist.
+func (r *MCPServerReconciler) reconcileService(
+	ctx context.Context,
+	mcpServer *mcpv1alpha1.MCPServer,
+) error {
+	logger := log.FromContext(ctx)
+
+	service := r.createService(mcpServer)
+	if err := controllerutil.SetControllerReference(mcpServer, service, r.Scheme); err != nil {
+		logger.Error(err, "Failed to set controller reference for Service")
+		return err
+	}
+
+	existingService := &corev1.Service{}
+	err := r.Get(ctx, client.ObjectKey{Name: service.Name, Namespace: service.Namespace}, existingService)
+	if err != nil && apierrors.IsNotFound(err) {
+		logger.Info("Creating Service", "name", service.Name)
+		if err := r.Create(ctx, service); err != nil {
+			logger.Error(err, "Failed to create Service")
+			return err
+		}
+	} else if err != nil {
+		logger.Error(err, "Failed to get Service")
+		return err
+	} else {
+		logger.Info("Service already exists", "name", service.Name)
+	}
+
+	return nil
 }
 
 // createService creates a Service for the MCPServer
