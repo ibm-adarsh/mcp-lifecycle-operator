@@ -14,8 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Generated from kubebuilder template:
-// https://github.com/kubernetes-sigs/kubebuilder/blob/v4.11.1/pkg/plugins/golang/v4/scaffolds/internal/templates/cmd/main.go
+// Generated from kubebuilder template (v4.11.1):
+// cmd/main.go
 
 package main
 
