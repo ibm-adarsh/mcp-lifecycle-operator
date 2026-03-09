@@ -302,3 +302,207 @@ var _ = Describe("MCPServer Controller", func() {
 		})
 	})
 })
+
+var _ = Describe("Phase Constants", func() {
+	It("should define expected phase values", func() {
+		Expect(PhasePending).To(Equal("Pending"))
+		Expect(PhaseRunning).To(Equal("Running"))
+		Expect(PhaseFailed).To(Equal("Failed"))
+	})
+})
+
+var _ = Describe("MCPServer Controller - reconcileDeployment", func() {
+	const resourceName = "test-reconcile-deployment"
+
+	ctx := context.Background()
+
+	typeNamespacedName := types.NamespacedName{
+		Name:      resourceName,
+		Namespace: "default",
+	}
+
+	BeforeEach(func() {
+		resource := &mcpv1alpha1.MCPServer{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      resourceName,
+				Namespace: "default",
+			},
+			Spec: mcpv1alpha1.MCPServerSpec{
+				Image: "test-image:latest",
+				Port:  8080,
+			},
+		}
+		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+	})
+
+	AfterEach(func() {
+		resource := &mcpv1alpha1.MCPServer{}
+		err := k8sClient.Get(ctx, typeNamespacedName, resource)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+	})
+
+	It("should create a deployment when none exists", func() {
+		mcpServer := &mcpv1alpha1.MCPServer{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
+
+		reconciler := &MCPServerReconciler{
+			Client: k8sClient,
+			Scheme: k8sClient.Scheme(),
+		}
+
+		deployment, err := reconciler.reconcileDeployment(ctx, mcpServer)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(deployment).NotTo(BeNil())
+		Expect(deployment.Name).To(Equal(resourceName))
+	})
+
+	It("should return existing deployment without error on second call", func() {
+		mcpServer := &mcpv1alpha1.MCPServer{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
+
+		reconciler := &MCPServerReconciler{
+			Client: k8sClient,
+			Scheme: k8sClient.Scheme(),
+		}
+
+		_, err := reconciler.reconcileDeployment(ctx, mcpServer)
+		Expect(err).NotTo(HaveOccurred())
+
+		deployment, err := reconciler.reconcileDeployment(ctx, mcpServer)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(deployment).NotTo(BeNil())
+	})
+})
+
+var _ = Describe("MCPServer Controller - reconcileService", func() {
+	const resourceName = "test-reconcile-service"
+
+	ctx := context.Background()
+
+	typeNamespacedName := types.NamespacedName{
+		Name:      resourceName,
+		Namespace: "default",
+	}
+
+	BeforeEach(func() {
+		resource := &mcpv1alpha1.MCPServer{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      resourceName,
+				Namespace: "default",
+			},
+			Spec: mcpv1alpha1.MCPServerSpec{
+				Image: "test-image:latest",
+				Port:  8080,
+			},
+		}
+		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+	})
+
+	AfterEach(func() {
+		resource := &mcpv1alpha1.MCPServer{}
+		err := k8sClient.Get(ctx, typeNamespacedName, resource)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+	})
+
+	It("should create a service when none exists", func() {
+		mcpServer := &mcpv1alpha1.MCPServer{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
+
+		reconciler := &MCPServerReconciler{
+			Client: k8sClient,
+			Scheme: k8sClient.Scheme(),
+		}
+
+		err := reconciler.reconcileService(ctx, mcpServer)
+		Expect(err).NotTo(HaveOccurred())
+
+		svc := &corev1.Service{}
+		err = k8sClient.Get(ctx, client.ObjectKey{
+			Name:      resourceName,
+			Namespace: "default",
+		}, svc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(svc.Name).To(Equal(resourceName))
+	})
+
+	It("should not error when service already exists", func() {
+		mcpServer := &mcpv1alpha1.MCPServer{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
+
+		reconciler := &MCPServerReconciler{
+			Client: k8sClient,
+			Scheme: k8sClient.Scheme(),
+		}
+
+		Expect(reconciler.reconcileService(ctx, mcpServer)).To(Succeed())
+		Expect(reconciler.reconcileService(ctx, mcpServer)).To(Succeed())
+	})
+})
+
+var _ = Describe("determinePhase", func() {
+	var generation int64 = 1
+
+	It("should return Pending when deployment has no conditions and no ready replicas", func() {
+		deployment := &appsv1.Deployment{
+			Status: appsv1.DeploymentStatus{},
+		}
+		phase, condition := determinePhase(deployment, generation)
+		Expect(phase).To(Equal(PhasePending))
+		Expect(condition.Reason).To(Equal("DeploymentPending"))
+		Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+	})
+
+	It("should return Running when deployment is available with ready replicas", func() {
+		deployment := &appsv1.Deployment{
+			Status: appsv1.DeploymentStatus{
+				ReadyReplicas: 1,
+				Conditions: []appsv1.DeploymentCondition{
+					{
+						Type:   appsv1.DeploymentAvailable,
+						Status: corev1.ConditionTrue,
+					},
+				},
+			},
+		}
+		phase, condition := determinePhase(deployment, generation)
+		Expect(phase).To(Equal(PhaseRunning))
+		Expect(condition.Reason).To(Equal("DeploymentAvailable"))
+		Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+	})
+
+	It("should return Failed when deployment has replica failure", func() {
+		deployment := &appsv1.Deployment{
+			Status: appsv1.DeploymentStatus{
+				Conditions: []appsv1.DeploymentCondition{
+					{
+						Type:    appsv1.DeploymentReplicaFailure,
+						Status:  corev1.ConditionTrue,
+						Message: "replica failed",
+					},
+				},
+			},
+		}
+		phase, condition := determinePhase(deployment, generation)
+		Expect(phase).To(Equal(PhaseFailed))
+		Expect(condition.Reason).To(Equal("DeploymentFailed"))
+		Expect(condition.Message).To(Equal("replica failed"))
+	})
+
+	It("should return Pending when deployment is progressing", func() {
+		deployment := &appsv1.Deployment{
+			Status: appsv1.DeploymentStatus{
+				Conditions: []appsv1.DeploymentCondition{
+					{
+						Type:   appsv1.DeploymentProgressing,
+						Status: corev1.ConditionTrue,
+					},
+				},
+			},
+		}
+		phase, condition := determinePhase(deployment, generation)
+		Expect(phase).To(Equal(PhasePending))
+		Expect(condition.Reason).To(Equal("DeploymentProgressing"))
+	})
+})

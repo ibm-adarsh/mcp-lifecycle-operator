@@ -38,6 +38,13 @@ import (
 	mcpv1alpha1 "github.com/kubernetes-sigs/mcp-lifecycle-operator/api/v1alpha1"
 )
 
+// Phase constants for MCPServer status.
+const (
+	PhasePending = "Pending"
+	PhaseRunning = "Running"
+	PhaseFailed  = "Failed"
+)
+
 // MCPServerReconciler reconciles a MCPServer object
 type MCPServerReconciler struct {
 	client.Client
@@ -56,106 +63,72 @@ type MCPServerReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.1/pkg/reconcile
 func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
 	// Fetch the MCPServer instance
 	mcpServer := &mcpv1alpha1.MCPServer{}
 	if err := r.Get(ctx, req.NamespacedName, mcpServer); err != nil {
 		if apierrors.IsNotFound(err) {
-			log.Info("MCPServer resource not found, ignoring since object must be deleted")
+			logger.Info("MCPServer resource not found, ignoring since object must be deleted")
 			return ctrl.Result{}, nil
 		}
-		log.Error(err, "Failed to get MCPServer")
+		logger.Error(err, "Failed to get MCPServer")
 		return ctrl.Result{}, err
 	}
 
-	log.Info("Reconciling MCPServer", "name", mcpServer.Name, "namespace", mcpServer.Namespace)
+	logger.Info("Reconciling MCPServer", "name", mcpServer.Name, "namespace", mcpServer.Namespace)
 
 	// Set initial phase
 	if mcpServer.Status.Phase == "" {
-		mcpServer.Status.Phase = "Pending"
+		mcpServer.Status.Phase = PhasePending
 		if err := r.Status().Update(ctx, mcpServer); err != nil {
-			log.Error(err, "Failed to update MCPServer status")
+			logger.Error(err, "Failed to update MCPServer status")
 			return ctrl.Result{}, err
 		}
 	}
 
-	// Create or update Deployment
-	deployment := r.createDeployment(mcpServer)
-	if err := controllerutil.SetControllerReference(mcpServer, deployment, r.Scheme); err != nil {
-		log.Error(err, "Failed to set controller reference for Deployment")
+	// Reconcile Deployment
+	existingDeployment, err := r.reconcileDeployment(ctx, mcpServer)
+	if err != nil {
+		r.updateStatusFailed(ctx, mcpServer, "Failed to reconcile Deployment")
 		return ctrl.Result{}, err
 	}
 
-	existingDeployment := &appsv1.Deployment{}
-	err := r.Get(ctx, client.ObjectKey{Name: deployment.Name, Namespace: deployment.Namespace}, existingDeployment)
-	if err != nil && apierrors.IsNotFound(err) {
-		log.Info("Creating Deployment", "name", deployment.Name)
-		if err := r.Create(ctx, deployment); err != nil {
-			log.Error(err, "Failed to create Deployment")
-			r.updateStatusFailed(ctx, mcpServer, "Failed to create Deployment")
-			return ctrl.Result{}, err
-		}
-		// After creation, fetch it again to get the current status
-		if err := r.Get(ctx, client.ObjectKey{Name: deployment.Name, Namespace: deployment.Namespace}, existingDeployment); err != nil {
-			log.Error(err, "Failed to get newly created Deployment")
-			return ctrl.Result{}, err
-		}
-	} else if err != nil {
-		log.Error(err, "Failed to get Deployment")
+	// Reconcile Service
+	if err := r.reconcileService(ctx, mcpServer); err != nil {
+		r.updateStatusFailed(ctx, mcpServer, "Failed to reconcile Service")
 		return ctrl.Result{}, err
-	} else {
-		oldPodSpec := existingDeployment.Spec.Template.Spec
-		newPodSpec := deployment.Spec.Template.Spec
-		needsUpdate := !equality.Semantic.DeepDerivative(newPodSpec, oldPodSpec) ||
-			!equality.Semantic.DeepEqual(oldPodSpec.Containers[0].Env, newPodSpec.Containers[0].Env) ||
-			!equality.Semantic.DeepEqual(oldPodSpec.Containers[0].EnvFrom, newPodSpec.Containers[0].EnvFrom)
-		if needsUpdate {
-			log.Info("Updating Deployment", "name", existingDeployment.Name)
-			existingDeployment.Spec.Template.Spec = deployment.Spec.Template.Spec
-			if err := r.Update(ctx, existingDeployment); err != nil {
-				log.Error(err, "Failed to update Deployment")
-				return ctrl.Result{}, err
-			}
-		} else {
-			log.Info("Deployment already exists and is up to date", "name", deployment.Name)
-		}
-	}
-
-	// Create or update Service
-	service := r.createService(mcpServer)
-	if err := controllerutil.SetControllerReference(mcpServer, service, r.Scheme); err != nil {
-		log.Error(err, "Failed to set controller reference for Service")
-		return ctrl.Result{}, err
-	}
-
-	existingService := &corev1.Service{}
-	err = r.Get(ctx, client.ObjectKey{Name: service.Name, Namespace: service.Namespace}, existingService)
-	if err != nil && apierrors.IsNotFound(err) {
-		log.Info("Creating Service", "name", service.Name)
-		if err := r.Create(ctx, service); err != nil {
-			log.Error(err, "Failed to create Service")
-			r.updateStatusFailed(ctx, mcpServer, "Failed to create Service")
-			return ctrl.Result{}, err
-		}
-	} else if err != nil {
-		log.Error(err, "Failed to get Service")
-		return ctrl.Result{}, err
-	} else {
-		log.Info("Service already exists", "name", service.Name)
 	}
 
 	// Update status based on Deployment status
-	mcpServer.Status.DeploymentName = deployment.Name
-	mcpServer.Status.ServiceName = service.Name
+	mcpServer.Status.DeploymentName = existingDeployment.Name
+	mcpServer.Status.ServiceName = mcpServer.Name
 
-	// Check Deployment status to determine MCPServer phase
+	// Determine phase from deployment status
+	phase, condition := determinePhase(existingDeployment, mcpServer.Generation)
+	mcpServer.Status.Phase = phase
+	meta.SetStatusCondition(&mcpServer.Status.Conditions, condition)
+
+	if err := r.Status().Update(ctx, mcpServer); err != nil {
+		logger.Error(err, "Failed to update MCPServer status")
+		return ctrl.Result{}, err
+	}
+
+	logger.Info("Successfully reconciled MCPServer", "phase", mcpServer.Status.Phase)
+	return ctrl.Result{}, nil
+}
+
+// determinePhase maps deployment status to an MCPServer phase and condition.
+func determinePhase(
+	deployment *appsv1.Deployment,
+	generation int64,
+) (string, metav1.Condition) {
 	deploymentAvailable := false
 	deploymentProgressing := false
 	deploymentReplicaFailure := false
 	var deploymentMessage string
 
-	for _, condition := range existingDeployment.Status.Conditions {
+	for _, condition := range deployment.Status.Conditions {
 		switch condition.Type {
 		case appsv1.DeploymentAvailable:
 			if condition.Status == corev1.ConditionTrue {
@@ -176,57 +149,100 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 	}
 
-	// Set phase and conditions based on Deployment status
-	if len(existingDeployment.Status.Conditions) == 0 && existingDeployment.Status.ReadyReplicas == 0 {
-		mcpServer.Status.Phase = "Pending"
-		meta.SetStatusCondition(&mcpServer.Status.Conditions, metav1.Condition{
+	if len(deployment.Status.Conditions) == 0 && deployment.Status.ReadyReplicas == 0 {
+		return PhasePending, metav1.Condition{
 			Type:               "Ready",
 			Status:             metav1.ConditionFalse,
 			Reason:             "DeploymentPending",
 			Message:            "Waiting for Deployment to report status",
-			ObservedGeneration: mcpServer.Generation,
-		})
-	} else if deploymentAvailable && existingDeployment.Status.ReadyReplicas > 0 {
-		mcpServer.Status.Phase = "Running"
-		meta.SetStatusCondition(&mcpServer.Status.Conditions, metav1.Condition{
+			ObservedGeneration: generation,
+		}
+	}
+
+	if deploymentAvailable && deployment.Status.ReadyReplicas > 0 {
+		return PhaseRunning, metav1.Condition{
 			Type:               "Ready",
 			Status:             metav1.ConditionTrue,
 			Reason:             "DeploymentAvailable",
 			Message:            "Deployment is available and ready",
-			ObservedGeneration: mcpServer.Generation,
-		})
-	} else if deploymentReplicaFailure || (!deploymentProgressing && !deploymentAvailable) {
-		mcpServer.Status.Phase = "Failed"
+			ObservedGeneration: generation,
+		}
+	}
+
+	if deploymentReplicaFailure || (!deploymentProgressing && !deploymentAvailable) {
 		message := "Deployment failed"
 		if deploymentMessage != "" {
 			message = deploymentMessage
 		}
-		meta.SetStatusCondition(&mcpServer.Status.Conditions, metav1.Condition{
+		return PhaseFailed, metav1.Condition{
 			Type:               "Ready",
 			Status:             metav1.ConditionFalse,
 			Reason:             "DeploymentFailed",
 			Message:            message,
-			ObservedGeneration: mcpServer.Generation,
-		})
+			ObservedGeneration: generation,
+		}
+	}
+
+	return PhasePending, metav1.Condition{
+		Type:               "Ready",
+		Status:             metav1.ConditionFalse,
+		Reason:             "DeploymentProgressing",
+		Message:            "Deployment is progressing",
+		ObservedGeneration: generation,
+	}
+}
+
+// reconcileDeployment creates or updates the Deployment for the MCPServer
+// and returns the current state of the deployment.
+func (r *MCPServerReconciler) reconcileDeployment(
+	ctx context.Context,
+	mcpServer *mcpv1alpha1.MCPServer,
+) (*appsv1.Deployment, error) {
+	logger := log.FromContext(ctx)
+
+	deployment := r.createDeployment(mcpServer)
+	if err := controllerutil.SetControllerReference(mcpServer, deployment, r.Scheme); err != nil {
+		logger.Error(err, "Failed to set controller reference for Deployment")
+		return nil, err
+	}
+
+	existingDeployment := &appsv1.Deployment{}
+	err := r.Get(ctx, client.ObjectKey{Name: deployment.Name, Namespace: deployment.Namespace}, existingDeployment)
+	if err != nil && apierrors.IsNotFound(err) {
+		logger.Info("Creating Deployment", "name", deployment.Name)
+		if err := r.Create(ctx, deployment); err != nil {
+			logger.Error(err, "Failed to create Deployment")
+			return nil, err
+		}
+		if err := r.Get(ctx, client.ObjectKey{
+			Name: deployment.Name, Namespace: deployment.Namespace,
+		}, existingDeployment); err != nil {
+			logger.Error(err, "Failed to get newly created Deployment")
+			return nil, err
+		}
+		return existingDeployment, nil
+	} else if err != nil {
+		logger.Error(err, "Failed to get Deployment")
+		return nil, err
+	}
+
+	oldPodSpec := existingDeployment.Spec.Template.Spec
+	newPodSpec := deployment.Spec.Template.Spec
+	needsUpdate := !equality.Semantic.DeepDerivative(newPodSpec, oldPodSpec) ||
+		!equality.Semantic.DeepEqual(oldPodSpec.Containers[0].Env, newPodSpec.Containers[0].Env) ||
+		!equality.Semantic.DeepEqual(oldPodSpec.Containers[0].EnvFrom, newPodSpec.Containers[0].EnvFrom)
+	if needsUpdate {
+		logger.Info("Updating Deployment", "name", existingDeployment.Name)
+		existingDeployment.Spec.Template.Spec = deployment.Spec.Template.Spec
+		if err := r.Update(ctx, existingDeployment); err != nil {
+			logger.Error(err, "Failed to update Deployment")
+			return nil, err
+		}
 	} else {
-		// Deployment is progressing but not yet available
-		mcpServer.Status.Phase = "Pending"
-		meta.SetStatusCondition(&mcpServer.Status.Conditions, metav1.Condition{
-			Type:               "Ready",
-			Status:             metav1.ConditionFalse,
-			Reason:             "DeploymentProgressing",
-			Message:            "Deployment is progressing",
-			ObservedGeneration: mcpServer.Generation,
-		})
+		logger.Info("Deployment already exists and is up to date", "name", deployment.Name)
 	}
 
-	if err := r.Status().Update(ctx, mcpServer); err != nil {
-		log.Error(err, "Failed to update MCPServer status")
-		return ctrl.Result{}, err
-	}
-
-	log.Info("Successfully reconciled MCPServer", "phase", mcpServer.Status.Phase)
-	return ctrl.Result{}, nil
+	return existingDeployment, nil
 }
 
 // createDeployment creates a Deployment for the MCPServer
@@ -321,6 +337,37 @@ func (r *MCPServerReconciler) createDeployment(mcpServer *mcpv1alpha1.MCPServer)
 	return deployment
 }
 
+// reconcileService creates the Service for the MCPServer if it doesn't exist.
+func (r *MCPServerReconciler) reconcileService(
+	ctx context.Context,
+	mcpServer *mcpv1alpha1.MCPServer,
+) error {
+	logger := log.FromContext(ctx)
+
+	service := r.createService(mcpServer)
+	if err := controllerutil.SetControllerReference(mcpServer, service, r.Scheme); err != nil {
+		logger.Error(err, "Failed to set controller reference for Service")
+		return err
+	}
+
+	existingService := &corev1.Service{}
+	err := r.Get(ctx, client.ObjectKey{Name: service.Name, Namespace: service.Namespace}, existingService)
+	if err != nil && apierrors.IsNotFound(err) {
+		logger.Info("Creating Service", "name", service.Name)
+		if err := r.Create(ctx, service); err != nil {
+			logger.Error(err, "Failed to create Service")
+			return err
+		}
+	} else if err != nil {
+		logger.Error(err, "Failed to get Service")
+		return err
+	} else {
+		logger.Info("Service already exists", "name", service.Name)
+	}
+
+	return nil
+}
+
 // createService creates a Service for the MCPServer
 func (r *MCPServerReconciler) createService(mcpServer *mcpv1alpha1.MCPServer) *corev1.Service {
 	labels := map[string]string{
@@ -355,7 +402,7 @@ func (r *MCPServerReconciler) createService(mcpServer *mcpv1alpha1.MCPServer) *c
 
 // updateStatusFailed updates the MCPServer status to Failed
 func (r *MCPServerReconciler) updateStatusFailed(ctx context.Context, mcpServer *mcpv1alpha1.MCPServer, message string) {
-	mcpServer.Status.Phase = "Failed"
+	mcpServer.Status.Phase = PhaseFailed
 	meta.SetStatusCondition(&mcpServer.Status.Conditions, metav1.Condition{
 		Type:               "Ready",
 		Status:             metav1.ConditionFalse,
