@@ -24,6 +24,9 @@ spec:
     - jsonPath: .spec.port
       name: Port
       type: integer
+    - jsonPath: .status.address.url
+      name: Address
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -315,6 +318,13 @@ spec:
                     - ghcr.io/modelcontextprotocol/servers/github:v1.0.0
                     - custom-registry.io/my-mcp-server:1.2.3
                 minLength: 1
+                type: string
+              path:
+                default: /mcp
+                description: |-
+                  Path is the HTTP path where the MCP server listens for SSE/Streamable HTTP connections.
+                  This path is appended to the service address in the status URL.
+                  Defaults to /mcp if not specified.
                 type: string
               podSecurityContext:
                 description: PodSecurityContext specifies the security context for
@@ -805,6 +815,15 @@ spec:
           status:
             description: status defines the observed state of MCPServer
             properties:
+              address:
+                description: Address contains the address of the MCP server service.
+                properties:
+                  url:
+                    description: |-
+                      URL is the cluster-internal address of the MCP server service.
+                      Format: http://<servicename>.<namespace>.svc.cluster.local:<port>/<path>
+                    type: string
+                type: object
               conditions:
                 description: |-
                   Conditions represent the current state of the MCPServer resource.

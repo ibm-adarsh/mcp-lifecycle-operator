@@ -106,6 +106,17 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// Update status based on Deployment status
 	mcpServer.Status.DeploymentName = existingDeployment.Name
 	mcpServer.Status.ServiceName = mcpServer.Name
+	if mcpServer.Spec.Port > 0 {
+		path := mcpServer.Spec.Path
+		if path == "" {
+			path = "/mcp"
+		}
+		mcpServer.Status.Address = &mcpv1alpha1.MCPServerAddress{
+			// TODO: enhance this later to be TLS aware
+			URL: fmt.Sprintf("http://%s.%s.svc.cluster.local:%d%s",
+				mcpServer.Name, mcpServer.Namespace, mcpServer.Spec.Port, path),
+		}
+	}
 
 	// Determine phase from deployment status
 	phase, condition := determinePhase(existingDeployment, mcpServer.Generation)

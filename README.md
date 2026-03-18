@@ -86,8 +86,24 @@ kubectl get pods -l mcp-server=test-server
 
 Expected output from `kubectl get mcpservers`:
 ```
-NAME          PHASE     IMAGE                                      PORT   AGE
-test-server   Running   aliok/mcp-server-streamable-http:latest   8081   1m
+NAME          PHASE     IMAGE                                      PORT   ADDRESS                                            AGE
+test-server   Running   aliok/mcp-server-streamable-http:latest   8081   http://test-server.default.svc.cluster.local:8081/mcp  1m
+```
+
+The `ADDRESS` column shows the cluster-internal URL that can be used by other workloads to connect to the MCP server.
+
+The status includes the service address for easy discovery:
+
+```yaml
+status:
+  phase: Running
+  deploymentName: test-server
+  serviceName: test-server
+  address:
+    url: http://test-server.default.svc.cluster.local:8081/mcp
+  conditions:
+    - type: Ready
+      status: "True"
 ```
 
 ### 5. Test the Service
