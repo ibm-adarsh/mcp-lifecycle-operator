@@ -525,8 +525,6 @@ spec:
                 description: |-
                   Runtime defines runtime management configuration.
                   If not specified, default runtime settings will be applied.
-                  If specified, at least one subfield must be provided.
-                minProperties: 1
                 properties:
                   replicas:
                     description: |-
@@ -539,8 +537,6 @@ spec:
                     description: |-
                       Security defines security-related configuration.
                       If not specified, default security settings will be applied.
-                      If specified, at least one subfield must be provided.
-                    minProperties: 1
                     properties:
                       podSecurityContext:
                         description: PodSecurityContext specifies the security context

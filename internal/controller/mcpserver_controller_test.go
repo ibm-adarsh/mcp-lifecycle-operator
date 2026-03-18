@@ -322,8 +322,8 @@ var _ = Describe("MCPServer Controller", func() {
 					Config: mcpv1alpha1.ServerConfig{
 						Port: 8080,
 					},
-					Runtime: &mcpv1alpha1.RuntimeConfig{
-						Security: &mcpv1alpha1.SecurityConfig{
+					Runtime: mcpv1alpha1.RuntimeConfig{
+						Security: mcpv1alpha1.SecurityConfig{
 							ServiceAccountName: "my-sa",
 						},
 					},
@@ -355,7 +355,7 @@ var _ = Describe("MCPServer Controller", func() {
 			Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
 			// Remove the entire Runtime config to avoid MinProperties validation error
 			// since RuntimeConfig only had Security set, which only had ServiceAccountName
-			mcpServer.Spec.Runtime = nil
+			mcpServer.Spec.Runtime = mcpv1alpha1.RuntimeConfig{}
 			Expect(k8sClient.Update(ctx, mcpServer)).To(Succeed())
 
 			By("Reconciling again to pick up the removal")
@@ -410,8 +410,8 @@ var _ = Describe("MCPServer Controller", func() {
 					Config: mcpv1alpha1.ServerConfig{
 						Port: 8080,
 					},
-					Runtime: &mcpv1alpha1.RuntimeConfig{
-						Security: &mcpv1alpha1.SecurityConfig{
+					Runtime: mcpv1alpha1.RuntimeConfig{
+						Security: mcpv1alpha1.SecurityConfig{
 							SecurityContext: &corev1.SecurityContext{
 								RunAsUser:  &runAsUser,
 								RunAsGroup: &runAsGroup,
@@ -462,8 +462,8 @@ var _ = Describe("MCPServer Controller", func() {
 					Config: mcpv1alpha1.ServerConfig{
 						Port: 8080,
 					},
-					Runtime: &mcpv1alpha1.RuntimeConfig{
-						Security: &mcpv1alpha1.SecurityConfig{
+					Runtime: mcpv1alpha1.RuntimeConfig{
+						Security: mcpv1alpha1.SecurityConfig{
 							PodSecurityContext: &corev1.PodSecurityContext{
 								RunAsUser: &runAsUser,
 								FSGroup:   &fsGroup,
@@ -515,8 +515,8 @@ var _ = Describe("MCPServer Controller", func() {
 					Config: mcpv1alpha1.ServerConfig{
 						Port: 8080,
 					},
-					Runtime: &mcpv1alpha1.RuntimeConfig{
-						Security: &mcpv1alpha1.SecurityConfig{
+					Runtime: mcpv1alpha1.RuntimeConfig{
+						Security: mcpv1alpha1.SecurityConfig{
 							PodSecurityContext: &corev1.PodSecurityContext{
 								RunAsUser: &runAsUser,
 								FSGroup:   &fsGroup,
@@ -649,7 +649,7 @@ var _ = Describe("MCPServer Controller", func() {
 					Config: mcpv1alpha1.ServerConfig{
 						Port: 8080,
 					},
-					Runtime: &mcpv1alpha1.RuntimeConfig{
+					Runtime: mcpv1alpha1.RuntimeConfig{
 						Replicas: ptr.To(int32(3)),
 					},
 				},
@@ -728,7 +728,7 @@ var _ = Describe("MCPServer Controller", func() {
 					Config: mcpv1alpha1.ServerConfig{
 						Port: 8080,
 					},
-					Runtime: &mcpv1alpha1.RuntimeConfig{
+					Runtime: mcpv1alpha1.RuntimeConfig{
 						Replicas: ptr.To(int32(2)),
 					},
 				},
@@ -757,9 +757,6 @@ var _ = Describe("MCPServer Controller", func() {
 			By("Updating replicas to 5")
 			mcpServer := &mcpv1alpha1.MCPServer{}
 			Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
-			if mcpServer.Spec.Runtime == nil {
-				mcpServer.Spec.Runtime = &mcpv1alpha1.RuntimeConfig{}
-			}
 			mcpServer.Spec.Runtime.Replicas = ptr.To(int32(5))
 			Expect(k8sClient.Update(ctx, mcpServer)).To(Succeed())
 
@@ -793,7 +790,7 @@ var _ = Describe("MCPServer Controller", func() {
 					Config: mcpv1alpha1.ServerConfig{
 						Port: 8080,
 					},
-					Runtime: &mcpv1alpha1.RuntimeConfig{
+					Runtime: mcpv1alpha1.RuntimeConfig{
 						Replicas: ptr.To(int32(3)),
 					},
 				},
@@ -824,7 +821,7 @@ var _ = Describe("MCPServer Controller", func() {
 			Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
 			// Remove the entire Runtime config to avoid MinProperties validation error
 			// since RuntimeConfig only had Replicas set
-			mcpServer.Spec.Runtime = nil
+			mcpServer.Spec.Runtime = mcpv1alpha1.RuntimeConfig{}
 			Expect(k8sClient.Update(ctx, mcpServer)).To(Succeed())
 
 			By("Reconciling again to pick up the removal")

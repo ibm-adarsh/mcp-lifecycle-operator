@@ -932,10 +932,10 @@ var _ = Describe("MCPServer Validation", func() {
 	})
 
 	Context("RuntimeConfig validation", func() {
-		It("should reject empty RuntimeConfig (runtime: {})", func() {
+		It("should accept empty RuntimeConfig (runtime: {})", func() {
 			mcpServer := &MCPServer{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "invalid-empty-runtime",
+					Name:      "valid-empty-runtime",
 					Namespace: namespace.Name,
 				},
 				Spec: MCPServerSpec{
@@ -948,16 +948,10 @@ var _ = Describe("MCPServer Validation", func() {
 					Config: ServerConfig{
 						Port: 8080,
 					},
-					Runtime: &RuntimeConfig{}, // Invalid: empty struct
+					Runtime: RuntimeConfig{}, // Valid: empty struct with zero values
 				},
 			}
-			err := k8sClient.Create(ctx, mcpServer)
-			Expect(err).To(HaveOccurred())
-			Expect(apierrors.IsInvalid(err)).To(BeTrue())
-			Expect(err.Error()).To(Or(
-				ContainSubstring("minProperties"),
-				ContainSubstring("at least"),
-			))
+			Expect(k8sClient.Create(ctx, mcpServer)).To(Succeed())
 		})
 
 		It("should accept RuntimeConfig with replicas set", func() {
@@ -977,7 +971,7 @@ var _ = Describe("MCPServer Validation", func() {
 					Config: ServerConfig{
 						Port: 8080,
 					},
-					Runtime: &RuntimeConfig{
+					Runtime: RuntimeConfig{
 						Replicas: &replicas,
 					},
 				},
@@ -1001,8 +995,8 @@ var _ = Describe("MCPServer Validation", func() {
 					Config: ServerConfig{
 						Port: 8080,
 					},
-					Runtime: &RuntimeConfig{
-						Security: &SecurityConfig{
+					Runtime: RuntimeConfig{
+						Security: SecurityConfig{
 							ServiceAccountName: "custom-sa",
 						},
 					},
@@ -1027,7 +1021,7 @@ var _ = Describe("MCPServer Validation", func() {
 					Config: ServerConfig{
 						Port: 8080,
 					},
-					Runtime: nil, // Omitted - should use defaults
+					// Omitted - should use defaults
 				},
 			}
 			Expect(k8sClient.Create(ctx, mcpServer)).To(Succeed())
@@ -1035,10 +1029,10 @@ var _ = Describe("MCPServer Validation", func() {
 	})
 
 	Context("SecurityConfig validation", func() {
-		It("should reject empty SecurityConfig (security: {})", func() {
+		It("should accept empty SecurityConfig (security: {})", func() {
 			mcpServer := &MCPServer{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "invalid-empty-security",
+					Name:      "valid-empty-security",
 					Namespace: namespace.Name,
 				},
 				Spec: MCPServerSpec{
@@ -1051,18 +1045,12 @@ var _ = Describe("MCPServer Validation", func() {
 					Config: ServerConfig{
 						Port: 8080,
 					},
-					Runtime: &RuntimeConfig{
-						Security: &SecurityConfig{}, // Invalid: empty struct
+					Runtime: RuntimeConfig{
+						Security: SecurityConfig{}, // Valid: empty struct with zero values
 					},
 				},
 			}
-			err := k8sClient.Create(ctx, mcpServer)
-			Expect(err).To(HaveOccurred())
-			Expect(apierrors.IsInvalid(err)).To(BeTrue())
-			Expect(err.Error()).To(Or(
-				ContainSubstring("minProperties"),
-				ContainSubstring("at least"),
-			))
+			Expect(k8sClient.Create(ctx, mcpServer)).To(Succeed())
 		})
 
 		It("should accept SecurityConfig with serviceAccountName set", func() {
@@ -1081,8 +1069,8 @@ var _ = Describe("MCPServer Validation", func() {
 					Config: ServerConfig{
 						Port: 8080,
 					},
-					Runtime: &RuntimeConfig{
-						Security: &SecurityConfig{
+					Runtime: RuntimeConfig{
+						Security: SecurityConfig{
 							ServiceAccountName: "custom-sa",
 						},
 					},
@@ -1108,8 +1096,8 @@ var _ = Describe("MCPServer Validation", func() {
 					Config: ServerConfig{
 						Port: 8080,
 					},
-					Runtime: &RuntimeConfig{
-						Security: &SecurityConfig{
+					Runtime: RuntimeConfig{
+						Security: SecurityConfig{
 							PodSecurityContext: &corev1.PodSecurityContext{
 								RunAsNonRoot: &runAsNonRoot,
 							},
@@ -1137,8 +1125,8 @@ var _ = Describe("MCPServer Validation", func() {
 					Config: ServerConfig{
 						Port: 8080,
 					},
-					Runtime: &RuntimeConfig{
-						Security: &SecurityConfig{
+					Runtime: RuntimeConfig{
+						Security: SecurityConfig{
 							SecurityContext: &corev1.SecurityContext{
 								AllowPrivilegeEscalation: &allowPrivilegeEscalation,
 							},
@@ -1166,9 +1154,9 @@ var _ = Describe("MCPServer Validation", func() {
 					Config: ServerConfig{
 						Port: 8080,
 					},
-					Runtime: &RuntimeConfig{
+					Runtime: RuntimeConfig{
 						Replicas: &replicas,
-						Security: nil, // Omitted - should use defaults
+						// Omitted - should use defaults
 					},
 				},
 			}
@@ -1191,8 +1179,8 @@ var _ = Describe("MCPServer Validation", func() {
 					Config: ServerConfig{
 						Port: 8080,
 					},
-					Runtime: &RuntimeConfig{
-						Security: &SecurityConfig{
+					Runtime: RuntimeConfig{
+						Security: SecurityConfig{
 							ServiceAccountName: "my-service-account", // Valid DNS subdomain
 						},
 					},
@@ -1217,8 +1205,8 @@ var _ = Describe("MCPServer Validation", func() {
 					Config: ServerConfig{
 						Port: 8080,
 					},
-					Runtime: &RuntimeConfig{
-						Security: &SecurityConfig{
+					Runtime: RuntimeConfig{
+						Security: SecurityConfig{
 							ServiceAccountName: "my.service.account", // Valid with dots
 						},
 					},
@@ -1243,8 +1231,8 @@ var _ = Describe("MCPServer Validation", func() {
 					Config: ServerConfig{
 						Port: 8080,
 					},
-					Runtime: &RuntimeConfig{
-						Security: &SecurityConfig{
+					Runtime: RuntimeConfig{
+						Security: SecurityConfig{
 							ServiceAccountName: "MyServiceAccount", // Invalid: uppercase
 						},
 					},
@@ -1272,8 +1260,8 @@ var _ = Describe("MCPServer Validation", func() {
 					Config: ServerConfig{
 						Port: 8080,
 					},
-					Runtime: &RuntimeConfig{
-						Security: &SecurityConfig{
+					Runtime: RuntimeConfig{
+						Security: SecurityConfig{
 							ServiceAccountName: "my_service_account", // Invalid: underscore not allowed
 						},
 					},
@@ -1301,8 +1289,8 @@ var _ = Describe("MCPServer Validation", func() {
 					Config: ServerConfig{
 						Port: 8080,
 					},
-					Runtime: &RuntimeConfig{
-						Security: &SecurityConfig{
+					Runtime: RuntimeConfig{
+						Security: SecurityConfig{
 							ServiceAccountName: "-invalid-start", // Invalid: starts with hyphen
 						},
 					},
@@ -1330,8 +1318,8 @@ var _ = Describe("MCPServer Validation", func() {
 					Config: ServerConfig{
 						Port: 8080,
 					},
-					Runtime: &RuntimeConfig{
-						Security: &SecurityConfig{
+					Runtime: RuntimeConfig{
+						Security: SecurityConfig{
 							ServiceAccountName: "invalid-end-", // Invalid: ends with hyphen
 						},
 					},

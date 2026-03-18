@@ -196,9 +196,6 @@ type ServerConfig struct {
 // SecurityConfig defines security-related configuration.
 // If not specified, default security settings will be applied.
 // See individual field documentation for specific defaults.
-//
-// If specified, at least one field must be set.
-// +kubebuilder:validation:MinProperties:=1
 type SecurityConfig struct {
 	// ServiceAccountName is the name of the ServiceAccount to use for the MCP server pods.
 	// The ServiceAccount should have appropriate RBAC permissions for the MCP server's operations.
@@ -225,9 +222,6 @@ type SecurityConfig struct {
 // RuntimeConfig defines runtime management configuration for the MCP server.
 // If not specified, default runtime settings will be applied.
 // See individual field documentation for specific defaults.
-//
-// If specified, at least one field must be set.
-// +kubebuilder:validation:MinProperties:=1
 type RuntimeConfig struct {
 	// Replicas is the number of MCP server pod replicas to run.
 	// Defaults to 1 if not specified.
@@ -237,9 +231,8 @@ type RuntimeConfig struct {
 
 	// Security defines security-related configuration.
 	// If not specified, default security settings will be applied.
-	// If specified, at least one subfield must be provided.
 	// +optional
-	Security *SecurityConfig `json:"security,omitempty"`
+	Security SecurityConfig `json:"security,omitzero"`
 }
 
 // MCPServerSpec defines the desired state of MCPServer.
@@ -258,9 +251,8 @@ type MCPServerSpec struct {
 
 	// Runtime defines runtime management configuration.
 	// If not specified, default runtime settings will be applied.
-	// If specified, at least one subfield must be provided.
 	// +optional
-	Runtime *RuntimeConfig `json:"runtime,omitempty"`
+	Runtime RuntimeConfig `json:"runtime,omitzero"`
 
 	// Path is the HTTP path where the MCP server listens for SSE/Streamable HTTP connections.
 	// This path is appended to the service address in the status URL.

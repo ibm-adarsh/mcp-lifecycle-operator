@@ -287,7 +287,7 @@ func (r *MCPServerReconciler) createDeployment(ctx context.Context, mcpServer *m
 	}
 
 	replicas := int32(1)
-	if mcpServer.Spec.Runtime != nil && mcpServer.Spec.Runtime.Replicas != nil {
+	if mcpServer.Spec.Runtime.Replicas != nil {
 		replicas = *mcpServer.Spec.Runtime.Replicas
 	}
 	labels := map[string]string{
@@ -321,7 +321,7 @@ func (r *MCPServerReconciler) createDeployment(ctx context.Context, mcpServer *m
 	}
 
 	// Apply security context: use user-specified if provided, otherwise apply restricted defaults
-	if mcpServer.Spec.Runtime != nil && mcpServer.Spec.Runtime.Security != nil && mcpServer.Spec.Runtime.Security.SecurityContext != nil {
+	if mcpServer.Spec.Runtime.Security.SecurityContext != nil {
 		container.SecurityContext = mcpServer.Spec.Runtime.Security.SecurityContext
 	} else {
 		container.SecurityContext = defaultContainerSecurityContext()
@@ -439,13 +439,11 @@ func (r *MCPServerReconciler) createDeployment(ctx context.Context, mcpServer *m
 	}
 
 	// Add security settings if specified
-	if mcpServer.Spec.Runtime != nil && mcpServer.Spec.Runtime.Security != nil {
-		// Only set ServiceAccountName if non-empty; otherwise leave unset for Kubernetes to default
-		if mcpServer.Spec.Runtime.Security.ServiceAccountName != "" {
-			deployment.Spec.Template.Spec.ServiceAccountName = mcpServer.Spec.Runtime.Security.ServiceAccountName
-		}
-		deployment.Spec.Template.Spec.SecurityContext = mcpServer.Spec.Runtime.Security.PodSecurityContext
+	// Only set ServiceAccountName if non-empty; otherwise leave unset for Kubernetes to default
+	if mcpServer.Spec.Runtime.Security.ServiceAccountName != "" {
+		deployment.Spec.Template.Spec.ServiceAccountName = mcpServer.Spec.Runtime.Security.ServiceAccountName
 	}
+	deployment.Spec.Template.Spec.SecurityContext = mcpServer.Spec.Runtime.Security.PodSecurityContext
 
 	return deployment, nil
 }
