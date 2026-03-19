@@ -170,7 +170,11 @@ type ServerConfig struct {
 	// Arguments are command line arguments for the MCP server container.
 	// Use this to pass configuration flags to the server.
 	// Example: ["--config", "/etc/mcp-config/config.toml", "--verbose"]
+	// When not specified, the container image's default arguments (CMD/ENTRYPOINT) are used.
+	// An empty array [] is allowed and will override the container image's default arguments with no arguments.
+	// Empty strings within the array are not allowed.
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="self.all(arg, arg.size() > 0)",message="arguments must not contain empty strings"
 	Arguments []string `json:"arguments,omitempty"`
 
 	// Env is a list of environment variables to set in the MCP server container.

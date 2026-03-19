@@ -1552,5 +1552,74 @@ var _ = Describe("MCPServer Validation", func() {
 				ContainSubstring("max length"),
 			))
 		})
+
+		It("should accept valid arguments array", func() {
+			mcpServer := &MCPServer{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "valid-arguments",
+					Namespace: namespace.Name,
+				},
+				Spec: MCPServerSpec{
+					Source: Source{
+						Type: SourceTypeContainerImage,
+						ContainerImage: &ContainerImageSource{
+							Ref: "docker.io/library/test-image:latest",
+						},
+					},
+					Config: ServerConfig{
+						Port:      8080,
+						Arguments: []string{"--config", "/etc/config.toml", "--verbose"},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mcpServer)).To(Succeed())
+		})
+
+		It("should accept empty arguments array", func() {
+			mcpServer := &MCPServer{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "empty-arguments",
+					Namespace: namespace.Name,
+				},
+				Spec: MCPServerSpec{
+					Source: Source{
+						Type: SourceTypeContainerImage,
+						ContainerImage: &ContainerImageSource{
+							Ref: "docker.io/library/test-image:latest",
+						},
+					},
+					Config: ServerConfig{
+						Port:      8080,
+						Arguments: []string{},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mcpServer)).To(Succeed())
+		})
+
+		It("should reject arguments array containing empty strings", func() {
+			mcpServer := &MCPServer{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "invalid-empty-string-arg",
+					Namespace: namespace.Name,
+				},
+				Spec: MCPServerSpec{
+					Source: Source{
+						Type: SourceTypeContainerImage,
+						ContainerImage: &ContainerImageSource{
+							Ref: "docker.io/library/test-image:latest",
+						},
+					},
+					Config: ServerConfig{
+						Port:      8080,
+						Arguments: []string{"--config", "", "--verbose"},
+					},
+				},
+			}
+			err := k8sClient.Create(ctx, mcpServer)
+			Expect(err).To(HaveOccurred())
+			Expect(apierrors.IsInvalid(err)).To(BeTrue())
+			Expect(err.Error()).To(ContainSubstring("arguments must not contain empty strings"))
+		})
 	})
 })
