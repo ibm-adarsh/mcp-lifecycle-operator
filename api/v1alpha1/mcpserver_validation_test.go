@@ -1373,8 +1373,8 @@ var _ = Describe("MCPServer Validation", func() {
 					},
 					Config: ServerConfig{
 						Port: 8080,
+						Path: "/api/v1/mcp",
 					},
-					Path: "/api/v1/mcp",
 				},
 			}
 			Expect(k8sClient.Create(ctx, mcpServer)).To(Succeed())
@@ -1395,8 +1395,8 @@ var _ = Describe("MCPServer Validation", func() {
 					},
 					Config: ServerConfig{
 						Port: 8080,
+						Path: "/mcp-server_v1",
 					},
-					Path: "/mcp-server_v1",
 				},
 			}
 			Expect(k8sClient.Create(ctx, mcpServer)).To(Succeed())
@@ -1439,8 +1439,8 @@ var _ = Describe("MCPServer Validation", func() {
 					},
 					Config: ServerConfig{
 						Port: 8080,
+						Path: "relative/path",
 					},
-					Path: "relative/path",
 				},
 			}
 			err := k8sClient.Create(ctx, mcpServer)
@@ -1464,8 +1464,8 @@ var _ = Describe("MCPServer Validation", func() {
 					},
 					Config: ServerConfig{
 						Port: 8080,
+						Path: "/mcp server/path",
 					},
-					Path: "/mcp server/path",
 				},
 			}
 			err := k8sClient.Create(ctx, mcpServer)
@@ -1489,8 +1489,8 @@ var _ = Describe("MCPServer Validation", func() {
 					},
 					Config: ServerConfig{
 						Port: 8080,
+						Path: "/mcp?query=param",
 					},
-					Path: "/mcp?query=param",
 				},
 			}
 			err := k8sClient.Create(ctx, mcpServer)
@@ -1514,8 +1514,8 @@ var _ = Describe("MCPServer Validation", func() {
 					},
 					Config: ServerConfig{
 						Port: 8080,
+						Path: "/mcp#fragment",
 					},
-					Path: "/mcp#fragment",
 				},
 			}
 			err := k8sClient.Create(ctx, mcpServer)
@@ -1540,8 +1540,8 @@ var _ = Describe("MCPServer Validation", func() {
 					},
 					Config: ServerConfig{
 						Port: 8080,
+						Path: longPath,
 					},
-					Path: longPath,
 				},
 			}
 			err := k8sClient.Create(ctx, mcpServer)

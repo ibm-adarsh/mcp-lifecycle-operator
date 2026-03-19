@@ -1101,8 +1101,8 @@ var _ = Describe("MCPServer Controller - Address URL", func() {
 					},
 					Config: mcpv1alpha1.ServerConfig{
 						Port: 8080,
+						Path: "/sse",
 					},
-					Path: "/sse",
 				},
 			}
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())

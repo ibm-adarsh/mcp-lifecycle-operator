@@ -280,6 +280,30 @@ spec:
                           x-kubernetes-map-type: atomic
                       type: object
                     type: array
+                  path:
+                    default: /mcp
+                    description: |-
+                      Path is the HTTP path where the MCP server listens for SSE/Streamable HTTP connections.
+                      This path is appended to the service address in the status URL.
+                      Must be a valid URI path component starting with '/'.
+                      Maximum 253 characters. Cannot contain spaces, control characters, or query/fragment separators (? #).
+                      Examples: /mcp, /api/v1/mcp, /services/mcp-server
+                      Defaults to /mcp if not specified.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: path must start with '/'
+                      rule: self.startsWith('/')
+                    - message: path must not contain spaces
+                      rule: '!self.contains('' '')'
+                    - message: path must not contain query string separator '?'
+                      rule: '!self.contains(''?'')'
+                    - message: path must not contain fragment separator '#'
+                      rule: '!self.contains(''#'')'
+                    - message: path must not contain control characters (newlines,
+                        tabs)
+                      rule: '!self.contains(''\n'') && !self.contains(''\r'') && !self.contains(''\t'')'
                   port:
                     description: |-
                       Port is a required field that specifies the port number on which the MCP server listens for connections.
@@ -498,29 +522,6 @@ spec:
                 required:
                 - port
                 type: object
-              path:
-                default: /mcp
-                description: |-
-                  Path is the HTTP path where the MCP server listens for SSE/Streamable HTTP connections.
-                  This path is appended to the service address in the status URL.
-                  Must be a valid URI path component starting with '/'.
-                  Maximum 253 characters. Cannot contain spaces, control characters, or query/fragment separators (? #).
-                  Examples: /mcp, /api/v1/mcp, /services/mcp-server
-                  Defaults to /mcp if not specified.
-                maxLength: 253
-                minLength: 1
-                type: string
-                x-kubernetes-validations:
-                - message: path must start with '/'
-                  rule: self.startsWith('/')
-                - message: path must not contain spaces
-                  rule: '!self.contains('' '')'
-                - message: path must not contain query string separator '?'
-                  rule: '!self.contains(''?'')'
-                - message: path must not contain fragment separator '#'
-                  rule: '!self.contains(''#'')'
-                - message: path must not contain control characters (newlines, tabs)
-                  rule: '!self.contains(''\n'') && !self.contains(''\r'') && !self.contains(''\t'')'
               runtime:
                 description: |-
                   Runtime defines runtime management configuration.

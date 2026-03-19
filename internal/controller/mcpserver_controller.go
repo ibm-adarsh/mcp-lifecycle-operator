@@ -107,7 +107,7 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	mcpServer.Status.DeploymentName = existingDeployment.Name
 	mcpServer.Status.ServiceName = mcpServer.Name
 	if mcpServer.Spec.Config.Port > 0 {
-		path := mcpServer.Spec.Path
+		path := mcpServer.Spec.Config.Path
 		if path == "" {
 			path = "/mcp"
 		}

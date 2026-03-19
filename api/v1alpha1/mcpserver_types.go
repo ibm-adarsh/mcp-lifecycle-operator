@@ -191,6 +191,23 @@ type ServerConfig struct {
 	// +optional
 	// +kubebuilder:validation:MaxItems=64
 	Storage []StorageMount `json:"storage,omitempty"`
+
+	// Path is the HTTP path where the MCP server listens for SSE/Streamable HTTP connections.
+	// This path is appended to the service address in the status URL.
+	// Must be a valid URI path component starting with '/'.
+	// Maximum 253 characters. Cannot contain spaces, control characters, or query/fragment separators (? #).
+	// Examples: /mcp, /api/v1/mcp, /services/mcp-server
+	// Defaults to /mcp if not specified.
+	// +optional
+	// +kubebuilder:default="/mcp"
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:XValidation:rule="self.startsWith('/')",message="path must start with '/'"
+	// +kubebuilder:validation:XValidation:rule="!self.contains(' ')",message="path must not contain spaces"
+	// +kubebuilder:validation:XValidation:rule="!self.contains('?')",message="path must not contain query string separator '?'"
+	// +kubebuilder:validation:XValidation:rule="!self.contains('#')",message="path must not contain fragment separator '#'"
+	// +kubebuilder:validation:XValidation:rule="!self.contains('\\n') && !self.contains('\\r') && !self.contains('\\t')",message="path must not contain control characters (newlines, tabs)"
+	Path string `json:"path,omitempty"`
 }
 
 // SecurityConfig defines security-related configuration.
@@ -254,23 +271,6 @@ type MCPServerSpec struct {
 	// If not specified, default runtime settings will be applied.
 	// +optional
 	Runtime RuntimeConfig `json:"runtime,omitzero"`
-
-	// Path is the HTTP path where the MCP server listens for SSE/Streamable HTTP connections.
-	// This path is appended to the service address in the status URL.
-	// Must be a valid URI path component starting with '/'.
-	// Maximum 253 characters. Cannot contain spaces, control characters, or query/fragment separators (? #).
-	// Examples: /mcp, /api/v1/mcp, /services/mcp-server
-	// Defaults to /mcp if not specified.
-	// +optional
-	// +kubebuilder:default="/mcp"
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=253
-	// +kubebuilder:validation:XValidation:rule="self.startsWith('/')",message="path must start with '/'"
-	// +kubebuilder:validation:XValidation:rule="!self.contains(' ')",message="path must not contain spaces"
-	// +kubebuilder:validation:XValidation:rule="!self.contains('?')",message="path must not contain query string separator '?'"
-	// +kubebuilder:validation:XValidation:rule="!self.contains('#')",message="path must not contain fragment separator '#'"
-	// +kubebuilder:validation:XValidation:rule="!self.contains('\\n') && !self.contains('\\r') && !self.contains('\\t')",message="path must not contain control characters (newlines, tabs)"
-	Path string `json:"path,omitempty"`
 }
 
 // MCPServerAddress contains the address information for the MCPServer.
