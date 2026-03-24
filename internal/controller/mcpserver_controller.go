@@ -251,7 +251,7 @@ func (r *MCPServerReconciler) reconcileDeployment(
 
 	var needsUpdate bool
 	if len(oldPodSpec.Containers) == 0 {
-	    logger.Info("Recovering deployment with empty containers list", "name", existingDeployment.Name)
+		logger.Info("Recovering deployment with empty containers list", "name", existingDeployment.Name)
 		needsUpdate = true
 	} else {
 		needsUpdate = !equality.Semantic.DeepDerivative(newPodSpec, oldPodSpec) ||
