@@ -196,6 +196,8 @@ make test
 
 ## Community, discussion, contribution, and support
 
+This project is part of Kubernetes [SIG Apps](https://github.com/kubernetes/community/blob/main/sig-apps/README.md).
+
 Learn how to engage with the Kubernetes community on the [community page](http://kubernetes.io/community/).
 
 You can reach the maintainers of this project at:
