@@ -22,6 +22,13 @@ SCRIPT_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 
 cd "${SCRIPT_ROOT}"
 
+# go install places binaries under GOPATH/bin or GOBIN; CI images (e.g. Netlify) often
+# do not include those directories on PATH, so invoke crd-ref-docs only after exporting PATH.
+GOPATH_BIN="$(go env GOPATH)/bin"
+GOBIN_DIR="$(go env GOBIN)"
+# Prefer GOBIN when set; otherwise binaries land in GOPATH/bin.
+export PATH="${GOBIN_DIR:+${GOBIN_DIR}:}${GOPATH_BIN}:${PATH}"
+
 echo "Generating API reference documentation..."
 
 # Install crd-ref-docs if not present
