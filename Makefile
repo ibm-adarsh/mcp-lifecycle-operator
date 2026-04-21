@@ -60,10 +60,36 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
+# Coverage profile written by `make test` (same default as kubebuilder scaffold).
+COVER_PROFILE ?= cover.out
+# Human-readable reports (not used by CI; see kubernetes-sigs/cluster-api `test-cover` pattern).
+COVER_OUTPUT_DIR ?= out
+
 .PHONY: test
 test: manifests generate fmt vet setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" \
-		go test $$(go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./... | grep -v /e2e) -coverprofile cover.out
+		go test $$(go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./... | grep -v /e2e) -coverprofile $(COVER_PROFILE)
+
+.PHONY: test-cover
+test-cover: test ## Run unit tests and write text + HTML coverage reports under out/ (informational).
+	mkdir -p $(COVER_OUTPUT_DIR)
+	go tool cover -func=$(COVER_PROFILE) -o $(COVER_OUTPUT_DIR)/coverage.txt
+	go tool cover -html=$(COVER_PROFILE) -o $(COVER_OUTPUT_DIR)/coverage.html
+	@echo "Wrote $(COVER_OUTPUT_DIR)/coverage.html and $(COVER_OUTPUT_DIR)/coverage.txt"
+
+.PHONY: cover-func
+cover-func: ## Print per-function coverage to stdout (requires cover.out; run make test first).
+	@test -f $(COVER_PROFILE) || { echo "missing $(COVER_PROFILE); run make test first" >&2; exit 1; }
+	go tool cover -func=$(COVER_PROFILE)
+
+.PHONY: cover-html
+cover-html: ## Open HTML coverage in a browser (requires cover.out; run make test first).
+	@test -f $(COVER_PROFILE) || { echo "missing $(COVER_PROFILE); run make test first" >&2; exit 1; }
+	go tool cover -html=$(COVER_PROFILE)
+
+.PHONY: cover-clean
+cover-clean: ## Remove cover.out and out/coverage.{txt,html} from test-cover.
+	rm -f $(COVER_PROFILE) $(COVER_OUTPUT_DIR)/coverage.txt $(COVER_OUTPUT_DIR)/coverage.html
 
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'test/e2e'.
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
