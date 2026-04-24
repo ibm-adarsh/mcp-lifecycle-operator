@@ -979,6 +979,32 @@ func classifyAPIError(resourceDesc string, namespace string, err error) error {
 	return fmt.Errorf("transient error validating %s: %w", resourceDesc, err)
 }
 
+// validateReferencedConfigMap returns a permanent ValidationError on NotFound/BadRequest,
+// or a wrapped transient error for other API failures.
+func (r *MCPServerReconciler) validateReferencedConfigMap(
+	ctx context.Context,
+	namespace, name, resourceDesc string,
+) error {
+	cm := &corev1.ConfigMap{}
+	if err := r.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, cm); err != nil {
+		return classifyAPIError(resourceDesc, namespace, err)
+	}
+	return nil
+}
+
+// validateReferencedSecret returns a permanent ValidationError on NotFound/BadRequest,
+// or a wrapped transient error for other API failures.
+func (r *MCPServerReconciler) validateReferencedSecret(
+	ctx context.Context,
+	namespace, name, resourceDesc string,
+) error {
+	secret := &corev1.Secret{}
+	if err := r.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, secret); err != nil {
+		return classifyAPIError(resourceDesc, namespace, err)
+	}
+	return nil
+}
+
 // validateStorageMount validates a single storage mount configuration.
 // Returns ValidationError for permanent configuration errors, wrapped error for transient errors, or nil for success.
 func (r *MCPServerReconciler) validateStorageMount(
@@ -1005,16 +1031,8 @@ func (r *MCPServerReconciler) validateStorageMount(
 		if storage.Source.ConfigMap.Optional != nil && *storage.Source.ConfigMap.Optional {
 			return nil
 		}
-		// Validate ConfigMap exists
-		configMap := &corev1.ConfigMap{}
-		if err := r.Get(ctx, client.ObjectKey{
-			Name:      storage.Source.ConfigMap.Name,
-			Namespace: mcpServer.Namespace,
-		}, configMap); err != nil {
-			return classifyAPIError(
-				fmt.Sprintf("ConfigMap '%s'", storage.Source.ConfigMap.Name),
-				mcpServer.Namespace, err)
-		}
+		return r.validateReferencedConfigMap(ctx, mcpServer.Namespace, storage.Source.ConfigMap.Name,
+			fmt.Sprintf("ConfigMap '%s'", storage.Source.ConfigMap.Name))
 
 	case mcpv1alpha1.StorageTypeSecret:
 		if storage.Source.Secret == nil {
@@ -1033,16 +1051,8 @@ func (r *MCPServerReconciler) validateStorageMount(
 		if storage.Source.Secret.Optional != nil && *storage.Source.Secret.Optional {
 			return nil
 		}
-		// Validate Secret exists
-		secret := &corev1.Secret{}
-		if err := r.Get(ctx, client.ObjectKey{
-			Name:      storage.Source.Secret.SecretName,
-			Namespace: mcpServer.Namespace,
-		}, secret); err != nil {
-			return classifyAPIError(
-				fmt.Sprintf("Secret '%s'", storage.Source.Secret.SecretName),
-				mcpServer.Namespace, err)
-		}
+		return r.validateReferencedSecret(ctx, mcpServer.Namespace, storage.Source.Secret.SecretName,
+			fmt.Sprintf("Secret '%s'", storage.Source.Secret.SecretName))
 
 	case mcpv1alpha1.StorageTypeEmptyDir:
 		// Validate EmptyDir configuration is present
@@ -1073,27 +1083,17 @@ func (r *MCPServerReconciler) validateEnvFrom(
 ) error {
 	if ref := envFrom.ConfigMapRef; ref != nil {
 		if ref.Optional == nil || !*ref.Optional {
-			configMap := &corev1.ConfigMap{}
-			if err := r.Get(ctx, client.ObjectKey{
-				Name:      ref.Name,
-				Namespace: mcpServer.Namespace,
-			}, configMap); err != nil {
-				return classifyAPIError(
-					fmt.Sprintf("ConfigMap '%s' (envFrom index %d)", ref.Name, index),
-					mcpServer.Namespace, err)
+			if err := r.validateReferencedConfigMap(ctx, mcpServer.Namespace, ref.Name,
+				fmt.Sprintf("ConfigMap '%s' (envFrom index %d)", ref.Name, index)); err != nil {
+				return err
 			}
 		}
 	}
 	if ref := envFrom.SecretRef; ref != nil {
 		if ref.Optional == nil || !*ref.Optional {
-			secret := &corev1.Secret{}
-			if err := r.Get(ctx, client.ObjectKey{
-				Name:      ref.Name,
-				Namespace: mcpServer.Namespace,
-			}, secret); err != nil {
-				return classifyAPIError(
-					fmt.Sprintf("Secret '%s' (envFrom index %d)", ref.Name, index),
-					mcpServer.Namespace, err)
+			if err := r.validateReferencedSecret(ctx, mcpServer.Namespace, ref.Name,
+				fmt.Sprintf("Secret '%s' (envFrom index %d)", ref.Name, index)); err != nil {
+				return err
 			}
 		}
 	}
@@ -1113,27 +1113,17 @@ func (r *MCPServerReconciler) validateEnvValueFrom(
 	}
 	if ref := env.ValueFrom.ConfigMapKeyRef; ref != nil {
 		if ref.Optional == nil || !*ref.Optional {
-			configMap := &corev1.ConfigMap{}
-			if err := r.Get(ctx, client.ObjectKey{
-				Name:      ref.Name,
-				Namespace: mcpServer.Namespace,
-			}, configMap); err != nil {
-				return classifyAPIError(
-					fmt.Sprintf("ConfigMap '%s' referenced by env var '%s' (env index %d)", ref.Name, env.Name, index),
-					mcpServer.Namespace, err)
+			if err := r.validateReferencedConfigMap(ctx, mcpServer.Namespace, ref.Name,
+				fmt.Sprintf("ConfigMap '%s' referenced by env var '%s' (env index %d)", ref.Name, env.Name, index)); err != nil {
+				return err
 			}
 		}
 	}
 	if ref := env.ValueFrom.SecretKeyRef; ref != nil {
 		if ref.Optional == nil || !*ref.Optional {
-			secret := &corev1.Secret{}
-			if err := r.Get(ctx, client.ObjectKey{
-				Name:      ref.Name,
-				Namespace: mcpServer.Namespace,
-			}, secret); err != nil {
-				return classifyAPIError(
-					fmt.Sprintf("Secret '%s' referenced by env var '%s' (env index %d)", ref.Name, env.Name, index),
-					mcpServer.Namespace, err)
+			if err := r.validateReferencedSecret(ctx, mcpServer.Namespace, ref.Name,
+				fmt.Sprintf("Secret '%s' referenced by env var '%s' (env index %d)", ref.Name, env.Name, index)); err != nil {
+				return err
 			}
 		}
 	}
