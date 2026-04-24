@@ -198,54 +198,15 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// Configuration is valid, proceed with deployment reconciliation
 	existingDeployment, err := r.reconcileDeployment(ctx, mcpServer)
 	if err != nil {
-		// Deployment reconciliation failed - update status
-		readyCondition := newCondition(
-			ConditionTypeReady,
-			metav1.ConditionFalse,
-			ReasonDeploymentUnavailable,
-			fmt.Sprintf("Failed to reconcile Deployment: %v", err),
-			mcpServer.Generation,
-		)
-		preserveLastTransitionTime(&readyCondition, mcpServer.Status.Conditions)
-
-		status := acv1alpha1.MCPServerStatus().
-			WithObservedGeneration(mcpServer.Generation).
-			WithServiceName(mcpServer.Name).
-			WithConditions(
-				conditionToAC(acceptedCondition),
-				conditionToAC(readyCondition),
-			)
-
-		if err := r.applyStatus(ctx, mcpServer, status); err != nil {
-			logger.Error(err, "Failed to update MCPServer status")
-		}
+		r.applyReconcileFailureStatus(ctx, mcpServer, acceptedCondition,
+			ReasonDeploymentUnavailable, "Deployment", err, "")
 		return ctrl.Result{}, err
 	}
 
 	// Reconcile Service
 	if err := r.reconcileService(ctx, mcpServer); err != nil {
-		// Service reconciliation failed - update status
-		readyCondition := newCondition(
-			ConditionTypeReady,
-			metav1.ConditionFalse,
-			ReasonServiceUnavailable,
-			fmt.Sprintf("Failed to reconcile Service: %v", err),
-			mcpServer.Generation,
-		)
-		preserveLastTransitionTime(&readyCondition, mcpServer.Status.Conditions)
-
-		status := acv1alpha1.MCPServerStatus().
-			WithObservedGeneration(mcpServer.Generation).
-			WithDeploymentName(existingDeployment.Name).
-			WithServiceName(mcpServer.Name).
-			WithConditions(
-				conditionToAC(acceptedCondition),
-				conditionToAC(readyCondition),
-			)
-
-		if err := r.applyStatus(ctx, mcpServer, status); err != nil {
-			logger.Error(err, "Failed to update MCPServer status")
-		}
+		r.applyReconcileFailureStatus(ctx, mcpServer, acceptedCondition,
+			ReasonServiceUnavailable, "Service", err, existingDeployment.Name)
 		return ctrl.Result{}, err
 	}
 
@@ -540,6 +501,14 @@ func (r *MCPServerReconciler) reconcileDeployment(
 	return existingDeployment, nil
 }
 
+// mcpServerLabels returns labels applied to the MCPServer Deployment, Pod template, and Service.
+func mcpServerLabels(serverName string) map[string]string {
+	return map[string]string{
+		"app":        "mcp-server",
+		"mcp-server": serverName,
+	}
+}
+
 // createDeployment creates a Deployment for the MCPServer
 func (r *MCPServerReconciler) createDeployment(mcpServer *mcpv1alpha1.MCPServer) (*appsv1.Deployment, error) {
 	// Validate source type and extract image reference
@@ -559,10 +528,7 @@ func (r *MCPServerReconciler) createDeployment(mcpServer *mcpv1alpha1.MCPServer)
 	if mcpServer.Spec.Runtime.Replicas != nil {
 		replicas = *mcpServer.Spec.Runtime.Replicas
 	}
-	labels := map[string]string{
-		"app":        "mcp-server",
-		"mcp-server": mcpServer.Name,
-	}
+	labels := mcpServerLabels(mcpServer.Name)
 
 	container := corev1.Container{
 		Name:  "mcp-server",
@@ -779,10 +745,7 @@ func (r *MCPServerReconciler) reconcileService(
 
 // createService creates a Service for the MCPServer
 func (r *MCPServerReconciler) createService(mcpServer *mcpv1alpha1.MCPServer) *corev1.Service {
-	labels := map[string]string{
-		"app":        "mcp-server",
-		"mcp-server": mcpServer.Name,
-	}
+	labels := mcpServerLabels(mcpServer.Name)
 
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -877,6 +840,43 @@ func (r *MCPServerReconciler) applyStatus(
 		client.FieldOwner(fieldManager),
 		client.ForceOwnership,
 	)
+}
+
+// applyReconcileFailureStatus updates Accepted + Ready=False after Deployment or Service reconcile fails.
+// It logs applyStatus errors but does not replace the reconcile error returned by the caller.
+func (r *MCPServerReconciler) applyReconcileFailureStatus(
+	ctx context.Context,
+	mcpServer *mcpv1alpha1.MCPServer,
+	acceptedCondition metav1.Condition,
+	readyReason string,
+	resourceKind string,
+	reconcileErr error,
+	deploymentName string,
+) {
+	logger := log.FromContext(ctx)
+	readyCondition := newCondition(
+		ConditionTypeReady,
+		metav1.ConditionFalse,
+		readyReason,
+		fmt.Sprintf("Failed to reconcile %s: %v", resourceKind, reconcileErr),
+		mcpServer.Generation,
+	)
+	preserveLastTransitionTime(&readyCondition, mcpServer.Status.Conditions)
+
+	status := acv1alpha1.MCPServerStatus().
+		WithObservedGeneration(mcpServer.Generation)
+	if deploymentName != "" {
+		status = status.WithDeploymentName(deploymentName)
+	}
+	status = status.WithServiceName(mcpServer.Name).
+		WithConditions(
+			conditionToAC(acceptedCondition),
+			conditionToAC(readyCondition),
+		)
+
+	if err := r.applyStatus(ctx, mcpServer, status); err != nil {
+		logger.Error(err, "Failed to update MCPServer status")
+	}
 }
 
 func conditionToAC(condition metav1.Condition) *v1ac.ConditionApplyConfiguration {
@@ -1171,50 +1171,64 @@ func (r *MCPServerReconciler) validateConfig(
 	return nil
 }
 
+func appendUniqueName(names []string, seen map[string]bool, name string) []string {
+	if seen[name] {
+		return names
+	}
+	seen[name] = true
+	return append(names, name)
+}
+
+// referencedConfigMapAndSecretNames returns deduplicated ConfigMap and Secret names referenced
+// by the MCPServer (storage, envFrom, env). Used by field index extractors for watches.
+// This returns both required and optional references, matching Kubernetes semantics where
+// optional resources are still used when available.
+func referencedConfigMapAndSecretNames(mcpServer *mcpv1alpha1.MCPServer) (configMaps []string, secrets []string) {
+	cmSeen := make(map[string]bool)
+	secSeen := make(map[string]bool)
+
+	for _, storage := range mcpServer.Spec.Config.Storage {
+		switch storage.Source.Type {
+		case mcpv1alpha1.StorageTypeConfigMap:
+			if storage.Source.ConfigMap != nil {
+				configMaps = appendUniqueName(configMaps, cmSeen, storage.Source.ConfigMap.Name)
+			}
+		case mcpv1alpha1.StorageTypeSecret:
+			if storage.Source.Secret != nil {
+				secrets = appendUniqueName(secrets, secSeen, storage.Source.Secret.SecretName)
+			}
+		}
+	}
+
+	for _, envFrom := range mcpServer.Spec.Config.EnvFrom {
+		if envFrom.ConfigMapRef != nil {
+			configMaps = appendUniqueName(configMaps, cmSeen, envFrom.ConfigMapRef.Name)
+		}
+		if envFrom.SecretRef != nil {
+			secrets = appendUniqueName(secrets, secSeen, envFrom.SecretRef.Name)
+		}
+	}
+
+	for _, env := range mcpServer.Spec.Config.Env {
+		if env.ValueFrom != nil && env.ValueFrom.ConfigMapKeyRef != nil {
+			configMaps = appendUniqueName(configMaps, cmSeen, env.ValueFrom.ConfigMapKeyRef.Name)
+		}
+		if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil {
+			secrets = appendUniqueName(secrets, secSeen, env.ValueFrom.SecretKeyRef.Name)
+		}
+	}
+
+	return configMaps, secrets
+}
+
 // extractConfigMapNames is an index extractor that returns all ConfigMap names
 // referenced by an MCPServer. Used for efficient ConfigMap watch lookups.
 // This returns both required and optional ConfigMap references, matching Kubernetes
 // semantics where optional resources are still used when available.
 func extractConfigMapNames(obj client.Object) []string {
 	mcpServer := obj.(*mcpv1alpha1.MCPServer)
-	var configMaps []string
-	seen := make(map[string]bool)
-
-	// Extract from storage mounts
-	for _, storage := range mcpServer.Spec.Config.Storage {
-		if storage.Source.Type == mcpv1alpha1.StorageTypeConfigMap &&
-			storage.Source.ConfigMap != nil {
-			name := storage.Source.ConfigMap.Name
-			if !seen[name] {
-				configMaps = append(configMaps, name)
-				seen[name] = true
-			}
-		}
-	}
-
-	// Extract from envFrom
-	for _, envFrom := range mcpServer.Spec.Config.EnvFrom {
-		if envFrom.ConfigMapRef != nil {
-			name := envFrom.ConfigMapRef.Name
-			if !seen[name] {
-				configMaps = append(configMaps, name)
-				seen[name] = true
-			}
-		}
-	}
-
-	// Extract from env valueFrom
-	for _, env := range mcpServer.Spec.Config.Env {
-		if env.ValueFrom != nil && env.ValueFrom.ConfigMapKeyRef != nil {
-			name := env.ValueFrom.ConfigMapKeyRef.Name
-			if !seen[name] {
-				configMaps = append(configMaps, name)
-				seen[name] = true
-			}
-		}
-	}
-
-	return configMaps
+	cms, _ := referencedConfigMapAndSecretNames(mcpServer)
+	return cms
 }
 
 // extractSecretNames is an index extractor that returns all Secret names
@@ -1223,43 +1237,7 @@ func extractConfigMapNames(obj client.Object) []string {
 // semantics where optional resources are still used when available.
 func extractSecretNames(obj client.Object) []string {
 	mcpServer := obj.(*mcpv1alpha1.MCPServer)
-	var secrets []string
-	seen := make(map[string]bool)
-
-	// Extract from storage mounts
-	for _, storage := range mcpServer.Spec.Config.Storage {
-		if storage.Source.Type == mcpv1alpha1.StorageTypeSecret &&
-			storage.Source.Secret != nil {
-			name := storage.Source.Secret.SecretName
-			if !seen[name] {
-				secrets = append(secrets, name)
-				seen[name] = true
-			}
-		}
-	}
-
-	// Extract from envFrom
-	for _, envFrom := range mcpServer.Spec.Config.EnvFrom {
-		if envFrom.SecretRef != nil {
-			name := envFrom.SecretRef.Name
-			if !seen[name] {
-				secrets = append(secrets, name)
-				seen[name] = true
-			}
-		}
-	}
-
-	// Extract from env valueFrom
-	for _, env := range mcpServer.Spec.Config.Env {
-		if env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil {
-			name := env.ValueFrom.SecretKeyRef.Name
-			if !seen[name] {
-				secrets = append(secrets, name)
-				seen[name] = true
-			}
-		}
-	}
-
+	_, secrets := referencedConfigMapAndSecretNames(mcpServer)
 	return secrets
 }
 
