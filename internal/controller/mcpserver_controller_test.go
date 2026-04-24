@@ -36,7 +36,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -660,7 +659,7 @@ var _ = Describe("MCPServer Controller", func() {
 						Port: 8080,
 					},
 					Runtime: mcpv1alpha1.RuntimeConfig{
-						Replicas: ptr.To(int32(3)),
+						Replicas: new(int32(3)),
 					},
 				},
 			}
@@ -740,7 +739,7 @@ var _ = Describe("MCPServer Controller", func() {
 						Port: 8080,
 					},
 					Runtime: mcpv1alpha1.RuntimeConfig{
-						Replicas: ptr.To(int32(0)),
+						Replicas: new(int32(0)),
 					},
 				},
 			}
@@ -781,7 +780,7 @@ var _ = Describe("MCPServer Controller", func() {
 						Port: 8080,
 					},
 					Runtime: mcpv1alpha1.RuntimeConfig{
-						Replicas: ptr.To(int32(2)),
+						Replicas: new(int32(2)),
 					},
 				},
 			}
@@ -809,7 +808,7 @@ var _ = Describe("MCPServer Controller", func() {
 			By("Updating replicas to 5")
 			mcpServer := &mcpv1alpha1.MCPServer{}
 			Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
-			mcpServer.Spec.Runtime.Replicas = ptr.To(int32(5))
+			mcpServer.Spec.Runtime.Replicas = new(int32(5))
 			Expect(k8sClient.Update(ctx, mcpServer)).To(Succeed())
 
 			By("Reconciling again to pick up the change")
@@ -843,7 +842,7 @@ var _ = Describe("MCPServer Controller", func() {
 						Port: 8080,
 					},
 					Runtime: mcpv1alpha1.RuntimeConfig{
-						Replicas: ptr.To(int32(3)),
+						Replicas: new(int32(3)),
 					},
 				},
 			}
@@ -905,7 +904,7 @@ var _ = Describe("MCPServer Controller", func() {
 						Port: 8080,
 					},
 					Runtime: mcpv1alpha1.RuntimeConfig{
-						Replicas: ptr.To(int32(1)),
+						Replicas: new(int32(1)),
 					},
 				},
 			}
@@ -959,7 +958,7 @@ var _ = Describe("MCPServer Controller", func() {
 			Expect(readyCondition.Reason).To(Equal(ReasonAvailable))
 
 			By("Updating replicas to 3")
-			mcpServer.Spec.Runtime.Replicas = ptr.To(int32(3))
+			mcpServer.Spec.Runtime.Replicas = new(int32(3))
 			Expect(k8sClient.Update(ctx, mcpServer)).To(Succeed())
 
 			By("Reconciling after spec update")
@@ -1843,7 +1842,7 @@ var _ = Describe("MCPServer Controller - Address URL", func() {
 						Port: 8080,
 					},
 					Runtime: mcpv1alpha1.RuntimeConfig{
-						Replicas: ptr.To(int32(1)),
+						Replicas: new(int32(1)),
 					},
 				},
 			}
@@ -1952,7 +1951,7 @@ var _ = Describe("MCPServer Controller - Address URL", func() {
 						Port: 8080,
 					},
 					Runtime: mcpv1alpha1.RuntimeConfig{
-						Replicas: ptr.To(int32(1)),
+						Replicas: new(int32(1)),
 					},
 				},
 			}
@@ -2163,7 +2162,7 @@ var _ = Describe("MCPServer Controller - reconcileDeployment", func() {
 						Kind:       "MCPServer",
 						Name:       "test-empty-containers",
 						UID:        "fake-uid",
-						Controller: ptr.To(true),
+						Controller: new(true),
 					},
 				},
 			},
@@ -2602,7 +2601,7 @@ var _ = Describe("determineReadyCondition", func() {
 	It("should return Available when deployment is available with ready replicas", func() {
 		deployment := &appsv1.Deployment{
 			Spec: appsv1.DeploymentSpec{
-				Replicas: ptr.To[int32](1),
+				Replicas: new(int32(1)),
 			},
 			Status: appsv1.DeploymentStatus{
 				ReadyReplicas: 1,
@@ -2666,7 +2665,7 @@ var _ = Describe("determineReadyCondition", func() {
 	It("should return Ready=True with ScaledToZero reason when deployment is scaled to 0 replicas", func() {
 		deployment := &appsv1.Deployment{
 			Spec: appsv1.DeploymentSpec{
-				Replicas: ptr.To[int32](0),
+				Replicas: new(int32(0)),
 			},
 			Status: appsv1.DeploymentStatus{
 				ReadyReplicas: 0,
@@ -2724,7 +2723,7 @@ var _ = Describe("determineReadyCondition", func() {
 		// Create a deployment that would result in Status=True (different status)
 		deployment := &appsv1.Deployment{
 			Spec: appsv1.DeploymentSpec{
-				Replicas: ptr.To[int32](1),
+				Replicas: new(int32(1)),
 			},
 			Status: appsv1.DeploymentStatus{
 				ReadyReplicas: 1,
@@ -3727,7 +3726,7 @@ var _ = Describe("MCPServer Controller - Storage Mounts", func() {
 										LocalObjectReference: corev1.LocalObjectReference{
 											Name: "optional-configmap",
 										},
-										Optional: ptr.To(true),
+										Optional: new(true),
 									},
 								},
 							},
@@ -3806,7 +3805,7 @@ var _ = Describe("MCPServer Controller - Storage Mounts", func() {
 									Type: mcpv1alpha1.StorageTypeSecret,
 									Secret: &corev1.SecretVolumeSource{
 										SecretName: "optional-secret",
-										Optional:   ptr.To(true),
+										Optional:   new(true),
 									},
 								},
 							},
@@ -6447,7 +6446,7 @@ var _ = Describe("MCPServer Controller - Foreign Owned Resources", func() {
 							Kind:       "SomeOtherController",
 							Name:       "foreign-owner",
 							UID:        types.UID("foreign-controller-uid"),
-							Controller: ptr.To(true),
+							Controller: new(true),
 						},
 					},
 				},
@@ -6551,7 +6550,7 @@ var _ = Describe("MCPServer Controller - Foreign Owned Resources", func() {
 							Kind:       "SomeOtherController",
 							Name:       "foreign-svc-owner",
 							UID:        types.UID("foreign-svc-controller-uid"),
-							Controller: ptr.To(true),
+							Controller: new(true),
 						},
 					},
 				},
@@ -6860,14 +6859,14 @@ var _ = Describe("MCPServer Controller - Foreign Owned Resources", func() {
 							Kind:       "MCPServer",
 							Name:       "some-other-server",
 							UID:        types.UID("other-mcpserver-uid"),
-							Controller: ptr.To(false), // Not a controller
+							Controller: new(false), // Not a controller
 						},
 						{
 							APIVersion: "apps/v1",
 							Kind:       "ReplicaSet",
 							Name:       "some-replicaset",
 							UID:        types.UID("replicaset-uid"),
-							Controller: ptr.To(false), // Also not a controller
+							Controller: new(false), // Also not a controller
 						},
 					},
 				},
@@ -6984,14 +6983,14 @@ var _ = Describe("MCPServer Controller - Foreign Owned Resources", func() {
 							Kind:       "MCPServer",
 							Name:       "some-other-server",
 							UID:        types.UID("other-mcpserver-uid"),
-							Controller: ptr.To(false), // Not a controller
+							Controller: new(false), // Not a controller
 						},
 						{
 							APIVersion: "v1",
 							Kind:       "ConfigMap",
 							Name:       "some-config",
 							UID:        types.UID("config-uid"),
-							Controller: ptr.To(false), // Also not a controller
+							Controller: new(false), // Also not a controller
 						},
 					},
 				},
