@@ -901,9 +901,9 @@ func preserveLastTransitionTime(condition *metav1.Condition, existingConditions 
 // security context applied to MCP server containers by default.
 func defaultContainerSecurityContext() *corev1.SecurityContext {
 	return &corev1.SecurityContext{
-		AllowPrivilegeEscalation: new(false),
-		ReadOnlyRootFilesystem:   new(true),
-		RunAsNonRoot:             new(true),
+		AllowPrivilegeEscalation: ptr.To(false),
+		ReadOnlyRootFilesystem:   ptr.To(true),
+		RunAsNonRoot:             ptr.To(true),
 		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 		SeccompProfile:           &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 	}
