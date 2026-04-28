@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/prometheus/client_golang/prometheus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -165,6 +166,7 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if err := r.Get(ctx, req.NamespacedName, mcpServer); err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.Info("MCPServer resource not found, ignoring since object must be deleted")
+			cleanupMetrics(req.Name, req.Namespace)
 			return ctrl.Result{}, nil
 		}
 		logger.Error(err, "Failed to get MCPServer")
@@ -183,7 +185,10 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// Validate configuration
+	validationStart := time.Now()
 	if err := r.validateConfig(ctx, mcpServer); err != nil {
+		reconcileDuration.With(prometheus.Labels{"phase": "validation"}).Observe(time.Since(validationStart).Seconds())
+
 		var validationErr *ValidationError
 		if errors.As(err, &validationErr) {
 			return ctrl.Result{}, r.reconcilePermanentValidationError(ctx, mcpServer, validationErr)
@@ -194,6 +199,7 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// Don't update status - preserve existing Accepted condition
 		return ctrl.Result{}, err
 	}
+	reconcileDuration.With(prometheus.Labels{"phase": "validation"}).Observe(time.Since(validationStart).Seconds())
 
 	// Configuration is valid - create Accepted=True condition
 	acceptedCondition := newCondition(
@@ -205,9 +211,20 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	)
 	preserveLastTransitionTime(&acceptedCondition, mcpServer.Status.Conditions)
 
+	// Record Accepted condition metric
+	recordCondition(mcpServer.Name, mcpServer.Namespace,
+		acceptedCondition.Type, string(acceptedCondition.Status), acceptedCondition.Reason)
+
 	// Configuration is valid, proceed with deployment reconciliation
+	deploymentStart := time.Now()
 	existingDeployment, err := r.reconcileDeployment(ctx, mcpServer)
+	reconcileDuration.With(prometheus.Labels{"phase": "deployment"}).Observe(time.Since(deploymentStart).Seconds())
 	if err != nil {
+		deploymentFailuresTotal.With(prometheus.Labels{
+			"name":      mcpServer.Name,
+			"namespace": mcpServer.Namespace,
+			"reason":    "ReconcileError",
+		}).Inc()
 		// Deployment reconciliation failed - update status
 		readyCondition := newCondition(
 			ConditionTypeReady,
@@ -217,6 +234,9 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			mcpServer.Generation,
 		)
 		preserveLastTransitionTime(&readyCondition, mcpServer.Status.Conditions)
+
+		recordCondition(mcpServer.Name, mcpServer.Namespace,
+			readyCondition.Type, string(readyCondition.Status), readyCondition.Reason)
 
 		status := acv1alpha1.MCPServerStatus().
 			WithObservedGeneration(mcpServer.Generation).
@@ -235,7 +255,14 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// Reconcile Service
+	serviceStart := time.Now()
 	if err := r.reconcileService(ctx, mcpServer); err != nil {
+		reconcileDuration.With(prometheus.Labels{"phase": "service"}).Observe(time.Since(serviceStart).Seconds())
+		serviceFailuresTotal.With(prometheus.Labels{
+			"name":      mcpServer.Name,
+			"namespace": mcpServer.Namespace,
+			"reason":    "ReconcileError",
+		}).Inc()
 		// Service reconciliation failed - update status
 		readyCondition := newCondition(
 			ConditionTypeReady,
@@ -245,6 +272,9 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			mcpServer.Generation,
 		)
 		preserveLastTransitionTime(&readyCondition, mcpServer.Status.Conditions)
+
+		recordCondition(mcpServer.Name, mcpServer.Namespace,
+			readyCondition.Type, string(readyCondition.Status), readyCondition.Reason)
 
 		status := acv1alpha1.MCPServerStatus().
 			WithObservedGeneration(mcpServer.Generation).
@@ -264,12 +294,18 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// Determine Ready condition based on deployment status
+	reconcileDuration.With(prometheus.Labels{"phase": "service"}).Observe(time.Since(serviceStart).Seconds())
+
 	readyCondition := determineReadyCondition(
 		existingDeployment,
 		acceptedCondition,
 		mcpServer.Generation,
 		mcpServer.Status.Conditions,
 	)
+
+	// Record Ready condition metric
+	recordCondition(mcpServer.Name, mcpServer.Namespace,
+		readyCondition.Type, string(readyCondition.Status), readyCondition.Reason)
 
 	// Build status
 	path := mcpServer.Spec.Config.Path
@@ -1050,6 +1086,15 @@ func (r *MCPServerReconciler) reconcilePermanentValidationError(
 	)
 	preserveLastTransitionTime(&acceptedCondition, mcpServer.Status.Conditions)
 
+	recordCondition(mcpServer.Name, mcpServer.Namespace,
+		acceptedCondition.Type, string(acceptedCondition.Status), acceptedCondition.Reason)
+
+	validationFailuresTotal.With(prometheus.Labels{
+		"name":      mcpServer.Name,
+		"namespace": mcpServer.Namespace,
+		"reason":    validationErr.Reason,
+	}).Inc()
+
 	readyCondition := newCondition(
 		ConditionTypeReady,
 		metav1.ConditionFalse,
@@ -1081,6 +1126,8 @@ func (r *MCPServerReconciler) reconcilePermanentValidationError(
 	}
 
 	logger.Info("MCPServer configuration is invalid", "reason", validationErr.Reason)
+	recordCondition(mcpServer.Name, mcpServer.Namespace,
+		readyCondition.Type, string(readyCondition.Status), readyCondition.Reason)
 	return nil
 }
 
