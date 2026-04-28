@@ -44,3 +44,8 @@ __pycache__/
 site/
 site-src/reference/index.md
 .venv-mkdocs/
+
+# Do not set GOMODCACHE/GOCACHE to these paths; a module cache inside the repo
+# can break controller-gen (paths=./...) and produce spurious missing go.sum errors.
+.gomodcache/
+.gocache/
