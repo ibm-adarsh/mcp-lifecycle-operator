@@ -176,13 +176,6 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	logger.Info("Reconciling MCPServer", "name", mcpServer.Name, "namespace", mcpServer.Namespace)
 
 	pendingAcceptedEvent := !acceptedConditionIsTrue(mcpServer.Status.Conditions)
-	maybeEmitAccepted := func() {
-		if !pendingAcceptedEvent {
-			return
-		}
-		r.emitConfigurationAccepted(mcpServer)
-		pendingAcceptedEvent = false
-	}
 
 	// Validate configuration
 	validationStart := time.Now()
@@ -214,6 +207,11 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// Record Accepted condition metric
 	recordCondition(mcpServer.Name, mcpServer.Namespace,
 		acceptedCondition.Type, string(acceptedCondition.Status), acceptedCondition.Reason)
+
+	// Normal Event once per Accepted transition (single site); not transactional with applyStatus — PR #118.
+	if pendingAcceptedEvent {
+		r.emitConfigurationAccepted(mcpServer)
+	}
 
 	// Configuration is valid, proceed with deployment reconciliation
 	deploymentStart := time.Now()
@@ -248,8 +246,6 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 		if err := r.applyStatus(ctx, mcpServer, status); err != nil {
 			logger.Error(err, "Failed to update MCPServer status")
-		} else {
-			maybeEmitAccepted()
 		}
 		return ctrl.Result{}, err
 	}
@@ -287,8 +283,6 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 		if err := r.applyStatus(ctx, mcpServer, status); err != nil {
 			logger.Error(err, "Failed to update MCPServer status")
-		} else {
-			maybeEmitAccepted()
 		}
 		return ctrl.Result{}, err
 	}
@@ -375,7 +369,6 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		logger.Error(err, "Failed to apply MCPServer status")
 		return ctrl.Result{}, err
 	}
-	maybeEmitAccepted()
 
 	logger.Info("Successfully reconciled MCPServer",
 		"accepted", acceptedCondition.Status,
