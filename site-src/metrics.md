@@ -64,7 +64,7 @@ sum by (namespace, type, status, reason) (mcpserver_condition_info)
 
 ## Prometheus Operator
 
-If you use the [Prometheus Operator](https://github.com/prometheus-operator/prometheus-operator), apply a `ServiceMonitor` that selects the controller-manager metrics Service (same pattern as [Argo CD’s metrics guide](https://argo-cd.readthedocs.io/en/latest/operator-manual/metrics/#prometheus-operator)). Example:
+If you use the [Prometheus Operator](https://github.com/prometheus-operator/prometheus-operator), apply a `ServiceMonitor` that selects the controller-manager metrics Service. Example:
 
 ```yaml
 apiVersion: monitoring.coreos.com/v1
