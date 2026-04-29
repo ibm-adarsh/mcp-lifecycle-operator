@@ -138,5 +138,4 @@ Metric definitions and registration live in [`internal/controller/metrics.go`](h
 
 - **[Introduction](introduction.md)** — Architecture and `MCPServer` overview (including status conditions)
 - **[Quickstart](guides/quickstart.md)** — Deploy an MCP server and inspect status
-- **[API Reference](reference/)** — Full `MCPServer` API
 - **[Contributing](contributing/index.md)** — How to contribute
