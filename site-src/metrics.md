@@ -10,7 +10,7 @@ Metrics are exposed over **HTTPS** at path **`/metrics`** on **port `8443`** on 
 
 After a typical install from the [release `install.yaml`](https://github.com/kubernetes-sigs/mcp-lifecycle-operator/releases/latest), scrape:
 
-`https://mcp-lifecycle-operator-controller-manager-metrics-service.mcp-lifecycle-operator-system.svc:8443/metrics`
+[https://mcp-lifecycle-operator-controller-manager-metrics-service.mcp-lifecycle-operator-system.svc:8443/metrics](https://mcp-lifecycle-operator-controller-manager-metrics-service.mcp-lifecycle-operator-system.svc:8443/metrics)
 
 Adjust the Service name and namespace if you change the Kustomize `namePrefix` / `namespace` when deploying.
 
@@ -59,21 +59,20 @@ Only one active series exists per `(name, namespace, type)`. On delete, gauge se
 sum by (namespace, type, status, reason) (mcpserver_condition_info)
 ```
 
-### Labels for `mcpserver_validation_failures_total`
+### Labels for failure counters (`mcpserver_*_failures_total`)
+
+`mcpserver_validation_failures_total`, `mcpserver_deployment_failures_total`, and `mcpserver_service_failures_total` share the **same label set**:
 
 | Label | Description |
 | --- | --- |
 | `name` | `MCPServer` name |
 | `namespace` | `MCPServer` namespace |
-| `reason` | Validation failure reason; permanent errors currently use `Invalid` |
+| `reason` | Depends on which counter (see below) |
 
-### Labels for `mcpserver_deployment_failures_total` and `mcpserver_service_failures_total`
+**`reason` values**
 
-| Label | Description |
-| --- | --- |
-| `name` | `MCPServer` name |
-| `namespace` | `MCPServer` namespace |
-| `reason` | Failure reason; currently `ReconcileError` when the corresponding reconcile step returns an error |
+- **`mcpserver_validation_failures_total`** — permanent validation errors currently use `Invalid`.
+- **`mcpserver_deployment_failures_total`** and **`mcpserver_service_failures_total`** — currently `ReconcileError` when the corresponding reconcile step returns an error.
 
 ### Labels for `mcpserver_reconcile_phase_duration_seconds`
 
