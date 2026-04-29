@@ -15,6 +15,7 @@ Check out the [examples directory](https://github.com/kubernetes-sigs/mcp-lifecy
 
 ## Additional Resources
 
+- [Metrics](../metrics.md) - Prometheus metrics exposed by the operator
 - [API Reference](../reference/) - Complete API documentation
 - [Contributing Guide](../contributing/index.md) - How to contribute to the project
 - [SIG Apps](https://github.com/kubernetes/community/blob/main/sig-apps/README.md) - Join the community and attend meetings

@@ -3,4 +3,5 @@ nav:
   - Introduction: introduction.md
   - Guides: guides
   - Reference: reference
+  - Metrics: metrics.md
   - Contributing: contributing
