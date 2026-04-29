@@ -4,7 +4,12 @@ name: Govulncheck
 
 on:
   pull_request:
-    branches: ['main']
+    branches:
+      - main
+      - 'release-*'
+  schedule:
+    # Weekly Monday 08:00 UTC — catches new CVEs in the DB when no PRs run the check.
+    - cron: '0 8 * * 1'
   workflow_dispatch:
 
 permissions:
