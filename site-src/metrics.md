@@ -1,18 +1,21 @@
-# Prometheus metrics
+# Metrics
 
-The controller manager exposes Prometheus metrics at `/metrics` on the metrics server when [`--metrics-bind-address`](https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.3/pkg/metrics/server#Options) is non-zero. The generated **`config/default`** overlay patches the Deployment with `--metrics-bind-address=:8443` ([`manager_metrics_patch.yaml`](https://github.com/kubernetes-sigs/mcp-lifecycle-operator/blob/main/config/default/manager_metrics_patch.yaml)); combined with `--metrics-secure` defaulting to **true** in [`cmd/main.go`](https://github.com/kubernetes-sigs/mcp-lifecycle-operator/blob/main/cmd/main.go), that serves TLS on 8443. Use `--metrics-secure=false` for plain HTTP (for example with `:8080`). Besides [controller-runtime default metrics](https://book.kubebuilder.io/reference/metrics.html) (workqueues, REST client, leader election, etc.), the MCPServer reconciler registers **custom metrics** under the `mcpserver_` namespace.
+This page describes **Prometheus** metrics exposed by the MCP Lifecycle Operator: built-in [controller-runtime metrics](https://book.kubebuilder.io/reference/metrics.html) (workqueues, REST client, leader election, and related instrumentation) and custom `mcpserver_*` series registered by the `MCPServer` reconciler.
+
+The metrics HTTP handler is served when [`--metrics-bind-address`](https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.3/pkg/metrics/server#Options) is non-zero. The **`config/default`** Kustomize overlay patches the controller Deployment with `--metrics-bind-address=:8443` ([`manager_metrics_patch.yaml`](https://github.com/kubernetes-sigs/mcp-lifecycle-operator/blob/main/config/default/manager_metrics_patch.yaml)). With `--metrics-secure` defaulting to **true** in [`cmd/main.go`](https://github.com/kubernetes-sigs/mcp-lifecycle-operator/blob/main/cmd/main.go), that endpoint uses TLS on port 8443. Use `--metrics-secure=false` for plain HTTP (for example with `:8080`).
 
 ## Scraping with Prometheus Operator
 
-A sample `ServiceMonitor` for the [Prometheus Operator](https://github.com/prometheus-operator/prometheus-operator) lives in the repo:
+A sample `ServiceMonitor` manifest for the [Prometheus Operator](https://github.com/prometheus-operator/prometheus-operator) is maintained in the repository:
 
-- Manifest: [`config/prometheus/monitor.yaml`](https://github.com/kubernetes-sigs/mcp-lifecycle-operator/blob/main/config/prometheus/monitor.yaml)
+- [`config/prometheus/monitor.yaml`](https://github.com/kubernetes-sigs/mcp-lifecycle-operator/blob/main/config/prometheus/monitor.yaml)
 
-It is **not** wired into the default install: enable it by uncommenting the `[PROMETHEUS]` entry (`../prometheus`) in [`config/default/kustomization.yaml`](https://github.com/kubernetes-sigs/mcp-lifecycle-operator/blob/main/config/default/kustomization.yaml), then apply your overlay (for example kube-prometheus-stack) so the operator discovers the monitor.
+!!! note
+    The ServiceMonitor is **not** included in the default install. Uncomment the `[PROMETHEUS]` entry (`../prometheus`) in [`config/default/kustomization.yaml`](https://github.com/kubernetes-sigs/mcp-lifecycle-operator/blob/main/config/default/kustomization.yaml`), then apply your monitoring stack (for example kube-prometheus-stack) so Prometheus can discover the monitor.
 
 ## Custom metrics reference
 
-All custom metric names are prefixed with `mcpserver_` (Prometheus namespace `mcpserver`).
+Custom series use the Prometheus namespace `mcpserver` (exported metric names are prefixed with `mcpserver_`).
 
 ### `mcpserver_condition_info`
 
@@ -29,7 +32,7 @@ All custom metric names are prefixed with `mcpserver_` (Prometheus namespace `mc
 | `namespace` | MCPServer namespace |
 | `type` | Condition type: `Accepted` or `Ready` |
 | `status` | Kubernetes condition status: `True`, `False`, or `Unknown` |
-| `reason` | Condition reason — intended to match `.status.conditions[]`; see [Gauge vs status](#gauge-vs-mcpserver-status) |
+| `reason` | Condition reason (intended to match `.status.conditions[]`; see [note below](#gauge-versus-api-status)) |
 
 For each `(name, namespace, type)` tuple, at most one time series is active: updating a condition deletes prior series with the same name, namespace, and type so only the current status/reason remains.
 
@@ -42,14 +45,15 @@ When an `MCPServer` is deleted, `cleanupMetrics` removes **only** `mcpserver_con
 
 For **Ready**, `status` may be `Unknown` (for example reason `Initializing` while the Deployment has not reported conditions yet).
 
-#### Gauge vs MCPServer status
+<span id="gauge-versus-api-status"></span>
 
-`recordCondition` runs at fixed points in [`Reconcile`](https://github.com/kubernetes-sigs/mcp-lifecycle-operator/blob/main/internal/controller/mcpserver_controller.go). In rare cases the gauge can **diverge** from the API object’s `.status.conditions`:
+!!! note "Gauge versus API status"
+    `recordCondition` runs at fixed points in [`Reconcile`](https://github.com/kubernetes-sigs/mcp-lifecycle-operator/blob/main/internal/controller/mcpserver_controller.go). In rare cases the gauge can **diverge** from the API object's `.status.conditions`:
 
-1. **Permanent validation error** — `Ready` / `ConfigurationInvalid` is passed to `recordCondition` only **after** `applyStatus` succeeds. If that update fails, the `validation_failures_total` counter and `Accepted` gauge may already have been updated, but the **Ready** gauge may still reflect an older reconcile.
-2. **MCP endpoint handshake** — When deployment-level readiness is `Available`, the reconciler runs an MCP handshake and may set status to `MCPEndpointUnavailable` if it fails. That happens **after** `recordCondition` ran with `Available`; **`recordCondition` is not invoked again** in that reconcile, so the Ready gauge can still show `Available` until a later reconcile updates it.
+    1. **Permanent validation error** — `Ready` / `ConfigurationInvalid` is passed to `recordCondition` only **after** `applyStatus` succeeds. If that update fails, the `validation_failures_total` counter and `Accepted` gauge may already have been updated, but the **Ready** gauge may still reflect an older reconcile.
+    2. **MCP endpoint handshake** — When deployment-level readiness is `Available`, the reconciler runs an MCP handshake and may set status to `MCPEndpointUnavailable` if it fails. That happens **after** `recordCondition` ran with `Available`; **`recordCondition` is not invoked again** in that reconcile, so the Ready gauge can still show `Available` until a later reconcile updates it.
 
-Treat **`MCPServer.status.conditions` as authoritative** for correctness; use this gauge for aggregation and alerting with the above limitations in mind.
+    Treat **`MCPServer.status.conditions` as authoritative** for correctness; use this gauge for aggregation and alerting with the above limitations in mind.
 
 Use this metric to count or alert on MCPServers by acceptance/readiness state, for example:
 
@@ -128,4 +132,11 @@ Use `_bucket`, `_sum`, and `_count` suffixes as usual for histogram quantiles an
 
 ## Implementation note
 
-Metric definitions and registration live in [`internal/controller/metrics.go`](https://github.com/kubernetes-sigs/mcp-lifecycle-operator/blob/main/internal/controller/metrics.go). This document should stay aligned with that file when metrics are added or changed.
+Metric definitions and registration live in [`internal/controller/metrics.go`](https://github.com/kubernetes-sigs/mcp-lifecycle-operator/blob/main/internal/controller/metrics.go). Keep this page aligned with that file when metrics change.
+
+## Next steps
+
+- **[Introduction](introduction.md)** — Architecture and `MCPServer` overview (including status conditions)
+- **[Quickstart](guides/quickstart.md)** — Deploy an MCP server and inspect status
+- **[API Reference](reference/)** — Full `MCPServer` API
+- **[Contributing](contributing/index.md)** — How to contribute
