@@ -41,7 +41,12 @@ Custom metrics use the Prometheus namespace **`mcpserver`** (exported names star
 
 Only one active series exists per `(name, namespace, type)`. On delete, gauge series for that object are removed; **`*_failures_total` counters are not**—time series may remain in Prometheus.
 
-**Typical reasons:** **Accepted:** `Valid`, `Invalid`. **Ready:** `Available`, `ConfigurationInvalid`, `DeploymentUnavailable`, `ServiceUnavailable`, `ScaledToZero`, `Initializing`, `MCPEndpointUnavailable`. **Ready** may use status **Unknown** (for example `Initializing`).
+**Typical reasons**
+
+| `type` | Typical `reason` values | `status` notes |
+| --- | --- | --- |
+| `Accepted` | `Valid`, `Invalid` | Usually `True` or `False` |
+| `Ready` | `Available`, `ConfigurationInvalid`, `DeploymentUnavailable`, `ServiceUnavailable`, `ScaledToZero`, `Initializing`, `MCPEndpointUnavailable` | May be `Unknown` (for example `Initializing` while the Deployment has not reported conditions yet) |
 
 <span id="gauge-versus-api-status"></span>
 
@@ -54,13 +59,29 @@ Only one active series exists per `(name, namespace, type)`. On delete, gauge se
 sum by (namespace, type, status, reason) (mcpserver_condition_info)
 ```
 
-### Labels for counters and histogram
+### Labels for `mcpserver_validation_failures_total`
 
-**`mcpserver_validation_failures_total`:** `name`, `namespace`, `reason` (permanent errors currently use `Invalid`).
+| Label | Description |
+| --- | --- |
+| `name` | `MCPServer` name |
+| `namespace` | `MCPServer` namespace |
+| `reason` | Validation failure reason; permanent errors currently use `Invalid` |
 
-**`mcpserver_deployment_failures_total` / `mcpserver_service_failures_total`:** `name`, `namespace`, `reason`.
+### Labels for `mcpserver_deployment_failures_total` and `mcpserver_service_failures_total`
 
-**`mcpserver_reconcile_phase_duration_seconds`:** `phase` ∈ `validation`, `deployment`, `service`. Use `_bucket`, `_sum`, and `_count` for quantiles.
+| Label | Description |
+| --- | --- |
+| `name` | `MCPServer` name |
+| `namespace` | `MCPServer` namespace |
+| `reason` | Failure reason; currently `ReconcileError` when the corresponding reconcile step returns an error |
+
+### Labels for `mcpserver_reconcile_phase_duration_seconds`
+
+| Label | Description |
+| --- | --- |
+| `phase` | Reconciliation phase: `validation`, `deployment`, or `service` |
+
+Histogram time series use the usual `_bucket`, `_sum`, and `_count` suffixes for quantiles and averages.
 
 ## Prometheus Operator
 
@@ -90,10 +111,6 @@ spec:
 ```
 
 The repository maintains the full sample at [`config/prometheus/monitor.yaml`](https://github.com/kubernetes-sigs/mcp-lifecycle-operator/blob/main/config/prometheus/monitor.yaml). Wire it into your install by uncommenting the **`[PROMETHEUS]`** resource (`../prometheus`) in [`config/default/kustomization.yaml`](https://github.com/kubernetes-sigs/mcp-lifecycle-operator/blob/main/config/default/kustomization.yaml`), or apply an equivalent manifest alongside kube-prometheus-stack. Add labels your Prometheus `ServiceMonitor` selector expects (for example `release: prometheus`).
-
-## Implementation note
-
-Metric registration lives in [`internal/controller/metrics.go`](https://github.com/kubernetes-sigs/mcp-lifecycle-operator/blob/main/internal/controller/metrics.go). Update this page when that file changes.
 
 ## Next steps
 
