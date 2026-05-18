@@ -129,6 +129,8 @@ const (
 	eventActionConfigurationValidation = "ConfigurationValidation"
 	// eventActionConfigurationAccepted is the reporting action when Accepted becomes True.
 	eventActionConfigurationAccepted = "ConfigurationAccepted"
+	// eventActionServerReady is the reporting action when Ready becomes True with reason Available.
+	eventActionServerReady = "ServerReady"
 
 	// requeueDelayMCPHandshake is the initial delay before requeuing when an MCP handshake fails.
 	requeueDelayMCPHandshake = 10 * time.Second
@@ -204,6 +206,7 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	logger.Info("Reconciling MCPServer", "name", mcpServer.Name, "namespace", mcpServer.Namespace)
 
 	pendingAcceptedEvent := !acceptedConditionIsTrue(mcpServer.Status.Conditions)
+	pendingServerReadyEvent := !readyConditionIsAvailable(mcpServer.Status.Conditions)
 
 	// Validate configuration
 	validationStart := time.Now()
@@ -344,6 +347,13 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// If deployment-level readiness reports Available, verify the MCP endpoint.
 	var serverInfo *mcpv1alpha1.MCPServerInfo
 	readyCondition, serverInfo = r.reconcileHandshake(ctx, mcpServer, mcpURL, readyCondition)
+
+	// Normal Event once per Ready transition to Available after a successful handshake.
+	if pendingServerReadyEvent &&
+		readyCondition.Status == metav1.ConditionTrue &&
+		readyCondition.Reason == ReasonAvailable {
+		r.emitServerReady(mcpServer)
+	}
 
 	var handshakeRetryCount int32
 	if readyCondition.Reason == ReasonMCPEndpointUnavailable {
@@ -1241,6 +1251,11 @@ func acceptedConditionIsTrue(conditions []metav1.Condition) bool {
 	return c != nil && c.Status == metav1.ConditionTrue
 }
 
+func readyConditionIsAvailable(conditions []metav1.Condition) bool {
+	c := meta.FindStatusCondition(conditions, ConditionTypeReady)
+	return c != nil && c.Status == metav1.ConditionTrue && c.Reason == ReasonAvailable
+}
+
 func (r *MCPServerReconciler) reconcilePermanentValidationError(
 	ctx context.Context,
 	mcpServer *mcpv1alpha1.MCPServer,
@@ -1315,6 +1330,13 @@ func (r *MCPServerReconciler) emitConfigurationAccepted(mcpServer *mcpv1alpha1.M
 		return
 	}
 	r.Recorder.Eventf(mcpServer, nil, corev1.EventTypeNormal, ReasonValid, eventActionConfigurationAccepted, "%s", "MCPServer configuration is valid; Accepted=True")
+}
+
+func (r *MCPServerReconciler) emitServerReady(mcpServer *mcpv1alpha1.MCPServer) {
+	if r.Recorder == nil {
+		return
+	}
+	r.Recorder.Eventf(mcpServer, nil, corev1.EventTypeNormal, ReasonAvailable, eventActionServerReady, "%s", "MCPServer is ready; Ready=True")
 }
 
 func (r *MCPServerReconciler) applyStatus(

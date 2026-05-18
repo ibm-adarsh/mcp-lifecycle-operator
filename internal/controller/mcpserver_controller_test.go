@@ -63,6 +63,17 @@ func newReconcilerForTest(cli client.Client, sch *runtime.Scheme) *MCPServerReco
 	return r
 }
 
+// drainFakeRecorderEvents removes all pending events from a fake recorder channel.
+func drainFakeRecorderEvents(fr *events.FakeRecorder) {
+	for {
+		select {
+		case <-fr.Events:
+		default:
+			return
+		}
+	}
+}
+
 // newTestMCPServer returns an MCPServer with standard test defaults:
 // namespace "default", SourceTypeContainerImage with ref
 // "docker.io/library/test-image:latest", and port 8080.

@@ -385,6 +385,69 @@ var _ = Describe("MCPServer Controller - MCP Handshake Validation", func() {
 		Expect(dialCount).To(Equal(0))
 	})
 
+	It("should emit a Normal ServerReady event only when Ready transitions to Available after handshake", func() {
+		shouldFail := true
+		reconciler, fr := newReconcilerForTestWithFakeEvents(k8sClient, k8sClient.Scheme())
+		reconciler.MCPDialer = func(ctx context.Context, url string) (*mcpv1alpha1.MCPServerInfo, error) {
+			if shouldFail {
+				return nil, fmt.Errorf("intentional failure")
+			}
+			return &mcpv1alpha1.MCPServerInfo{
+				Name:            "test-server",
+				ProtocolVersion: "2025-03-26",
+			}, nil
+		}
+
+		By("Initial reconciliation creates deployment")
+		_, err := reconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		drainFakeRecorderEvents(fr)
+
+		By("Simulating deployment becoming available")
+		deployment := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, client.ObjectKey{
+			Name: resourceName, Namespace: "default",
+		}, deployment)).To(Succeed())
+
+		deployment.Status.Replicas = 1
+		deployment.Status.ReadyReplicas = 1
+		deployment.Status.Conditions = []appsv1.DeploymentCondition{
+			{Type: appsv1.DeploymentAvailable, Status: corev1.ConditionTrue},
+			{Type: appsv1.DeploymentProgressing, Status: corev1.ConditionTrue},
+		}
+		Expect(k8sClient.Status().Update(ctx, deployment)).To(Succeed())
+
+		By("Reconciling with handshake failure — no ServerReady event")
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		drainFakeRecorderEvents(fr)
+
+		By("Successful handshake — ServerReady event emitted once")
+		shouldFail = false
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		var serverReadyEvent string
+		Eventually(fr.Events).Should(Receive(&serverReadyEvent))
+		Expect(serverReadyEvent).To(ContainSubstring(corev1.EventTypeNormal))
+		Expect(serverReadyEvent).To(ContainSubstring(ReasonAvailable))
+		Expect(serverReadyEvent).To(ContainSubstring("Ready=True"))
+
+		By("Second reconcile — no duplicate ServerReady event")
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		Consistently(fr.Events, 300*time.Millisecond, 20*time.Millisecond).ShouldNot(Receive())
+	})
+
 	It("should pass a context with timeout to the dialer", func() {
 		var receivedCtx context.Context
 		reconciler := &MCPServerReconciler{
