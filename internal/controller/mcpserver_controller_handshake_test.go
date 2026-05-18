@@ -524,7 +524,7 @@ var _ = Describe("MCPServer Controller - MCP Handshake Validation", func() {
 		Expect(k8sClient.Status().Update(ctx, deployment)).To(Succeed())
 
 		By("Reconciling until handshake retries are exhausted")
-		for i := 0; i < maxMCPHandshakeRetries; i++ {
+		for i := range maxMCPHandshakeRetries {
 			result, recErr := reconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})

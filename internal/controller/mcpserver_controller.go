@@ -352,32 +352,13 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	var serverInfo *mcpv1alpha1.MCPServerInfo
 	readyCondition, serverInfo = r.reconcileHandshake(ctx, mcpServer, mcpURL, readyCondition)
 
-	// Normal Event once per Ready transition to Available after a successful handshake.
 	if pendingServerReadyEvent &&
 		readyCondition.Status == metav1.ConditionTrue &&
 		readyCondition.Reason == ReasonAvailable {
 		r.emitServerReady(mcpServer)
 	}
 
-	var handshakeRetryCount int32
-	prevHandshakeRetryCount := mcpServer.Status.HandshakeRetryCount
-	if mcpServer.Status.ObservedGeneration != mcpServer.Generation {
-		prevHandshakeRetryCount = 0
-	}
-	if readyCondition.Reason == ReasonMCPEndpointUnavailable {
-		if mcpServer.Status.ObservedGeneration == mcpServer.Generation {
-			handshakeRetryCount = mcpServer.Status.HandshakeRetryCount + 1
-		} else {
-			handshakeRetryCount = 1
-		}
-
-		if !duplicateHandshakeUnavailable(mcpServer.Status.Conditions, readyCondition.Message) {
-			r.emitMCPHandshakeFailed(mcpServer, readyCondition.Message)
-		}
-		if int(handshakeRetryCount) >= maxMCPHandshakeRetries && int(prevHandshakeRetryCount) < maxMCPHandshakeRetries {
-			r.emitMCPHandshakeRetriesExhausted(mcpServer, handshakeRetryCount)
-		}
-	}
+	handshakeRetryCount := r.reconcileHandshakeEventsAndRetryCount(mcpServer, readyCondition)
 
 	status := acv1alpha1.MCPServerStatus().
 		WithObservedGeneration(mcpServer.Generation).
@@ -448,6 +429,37 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// reconcileHandshakeEventsAndRetryCount emits handshake-related events and returns the updated retry count.
+func (r *MCPServerReconciler) reconcileHandshakeEventsAndRetryCount(
+	mcpServer *mcpv1alpha1.MCPServer,
+	readyCondition metav1.Condition,
+) int32 {
+	if readyCondition.Reason != ReasonMCPEndpointUnavailable {
+		return 0
+	}
+
+	prevHandshakeRetryCount := mcpServer.Status.HandshakeRetryCount
+	if mcpServer.Status.ObservedGeneration != mcpServer.Generation {
+		prevHandshakeRetryCount = 0
+	}
+
+	var handshakeRetryCount int32
+	if mcpServer.Status.ObservedGeneration == mcpServer.Generation {
+		handshakeRetryCount = mcpServer.Status.HandshakeRetryCount + 1
+	} else {
+		handshakeRetryCount = 1
+	}
+
+	if !duplicateHandshakeUnavailable(mcpServer.Status.Conditions, readyCondition.Message) {
+		r.emitMCPHandshakeFailed(mcpServer, readyCondition.Message)
+	}
+	if int(handshakeRetryCount) >= maxMCPHandshakeRetries && int(prevHandshakeRetryCount) < maxMCPHandshakeRetries {
+		r.emitMCPHandshakeRetriesExhausted(mcpServer, handshakeRetryCount)
+	}
+
+	return handshakeRetryCount
 }
 
 // reconcileHandshake performs the MCP handshake when the deployment is available,
