@@ -1336,7 +1336,7 @@ func (r *MCPServerReconciler) emitServerReady(mcpServer *mcpv1alpha1.MCPServer) 
 	if r.Recorder == nil {
 		return
 	}
-	r.Recorder.Eventf(mcpServer, nil, corev1.EventTypeNormal, ReasonAvailable, eventActionServerReady, "%s", "MCPServer is ready; Ready=True")
+	r.Recorder.Eventf(mcpServer, nil, corev1.EventTypeNormal, ReasonAvailable, eventActionServerReady, "MCPServer %s is ready; Ready=True", mcpServer.Name)
 }
 
 func (r *MCPServerReconciler) applyStatus(
