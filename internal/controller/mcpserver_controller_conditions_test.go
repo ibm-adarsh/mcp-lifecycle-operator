@@ -673,4 +673,18 @@ var _ = Describe("status condition helpers", func() {
 			{Type: ConditionTypeReady, Status: metav1.ConditionTrue, Reason: ReasonAvailable},
 		})).To(BeTrue())
 	})
+
+	It("duplicateHandshakeUnavailable returns true only for matching Ready=False MCPEndpointUnavailable message", func() {
+		msg := "MCP endpoint is not serving a valid MCP protocol: connection refused"
+		Expect(duplicateHandshakeUnavailable(nil, msg)).To(BeFalse())
+		Expect(duplicateHandshakeUnavailable([]metav1.Condition{
+			{Type: ConditionTypeReady, Status: metav1.ConditionFalse, Reason: ReasonDeploymentUnavailable, Message: msg},
+		}, msg)).To(BeFalse())
+		Expect(duplicateHandshakeUnavailable([]metav1.Condition{
+			{Type: ConditionTypeReady, Status: metav1.ConditionFalse, Reason: ReasonMCPEndpointUnavailable, Message: "other"},
+		}, msg)).To(BeFalse())
+		Expect(duplicateHandshakeUnavailable([]metav1.Condition{
+			{Type: ConditionTypeReady, Status: metav1.ConditionFalse, Reason: ReasonMCPEndpointUnavailable, Message: msg},
+		}, msg)).To(BeTrue())
+	})
 })

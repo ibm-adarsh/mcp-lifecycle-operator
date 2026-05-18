@@ -131,6 +131,10 @@ const (
 	eventActionConfigurationAccepted = "ConfigurationAccepted"
 	// eventActionServerReady is the reporting action when Ready becomes True with reason Available.
 	eventActionServerReady = "ServerReady"
+	// eventActionMCPHandshakeFailed is the reporting action when the MCP handshake fails.
+	eventActionMCPHandshakeFailed = "MCPHandshakeFailed"
+	// eventActionMCPHandshakeRetriesExhausted is the reporting action when handshake retries are exhausted.
+	eventActionMCPHandshakeRetriesExhausted = "MCPHandshakeRetriesExhausted"
 
 	// requeueDelayMCPHandshake is the initial delay before requeuing when an MCP handshake fails.
 	requeueDelayMCPHandshake = 10 * time.Second
@@ -356,11 +360,22 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	var handshakeRetryCount int32
+	prevHandshakeRetryCount := mcpServer.Status.HandshakeRetryCount
+	if mcpServer.Status.ObservedGeneration != mcpServer.Generation {
+		prevHandshakeRetryCount = 0
+	}
 	if readyCondition.Reason == ReasonMCPEndpointUnavailable {
 		if mcpServer.Status.ObservedGeneration == mcpServer.Generation {
 			handshakeRetryCount = mcpServer.Status.HandshakeRetryCount + 1
 		} else {
 			handshakeRetryCount = 1
+		}
+
+		if !duplicateHandshakeUnavailable(mcpServer.Status.Conditions, readyCondition.Message) {
+			r.emitMCPHandshakeFailed(mcpServer, readyCondition.Message)
+		}
+		if int(handshakeRetryCount) >= maxMCPHandshakeRetries && int(prevHandshakeRetryCount) < maxMCPHandshakeRetries {
+			r.emitMCPHandshakeRetriesExhausted(mcpServer, handshakeRetryCount)
 		}
 	}
 
@@ -1256,6 +1271,12 @@ func readyConditionIsAvailable(conditions []metav1.Condition) bool {
 	return c != nil && c.Status == metav1.ConditionTrue && c.Reason == ReasonAvailable
 }
 
+func duplicateHandshakeUnavailable(conditions []metav1.Condition, message string) bool {
+	prevReady := meta.FindStatusCondition(conditions, ConditionTypeReady)
+	return prevReady != nil && prevReady.Status == metav1.ConditionFalse &&
+		prevReady.Reason == ReasonMCPEndpointUnavailable && prevReady.Message == message
+}
+
 func (r *MCPServerReconciler) reconcilePermanentValidationError(
 	ctx context.Context,
 	mcpServer *mcpv1alpha1.MCPServer,
@@ -1337,6 +1358,22 @@ func (r *MCPServerReconciler) emitServerReady(mcpServer *mcpv1alpha1.MCPServer) 
 		return
 	}
 	r.Recorder.Eventf(mcpServer, nil, corev1.EventTypeNormal, ReasonAvailable, eventActionServerReady, "MCPServer %s is ready; Ready=True", mcpServer.Name)
+}
+
+func (r *MCPServerReconciler) emitMCPHandshakeFailed(mcpServer *mcpv1alpha1.MCPServer, message string) {
+	if r.Recorder == nil {
+		return
+	}
+	r.Recorder.Eventf(mcpServer, nil, corev1.EventTypeWarning, ReasonMCPEndpointUnavailable, eventActionMCPHandshakeFailed, "%s", message)
+}
+
+func (r *MCPServerReconciler) emitMCPHandshakeRetriesExhausted(mcpServer *mcpv1alpha1.MCPServer, retryCount int32) {
+	if r.Recorder == nil {
+		return
+	}
+	r.Recorder.Eventf(mcpServer, nil, corev1.EventTypeWarning, ReasonMCPEndpointUnavailable, eventActionMCPHandshakeRetriesExhausted,
+		"MCP handshake retries exhausted for MCPServer %s after %d attempts; fix the MCP endpoint or update spec to retry",
+		mcpServer.Name, retryCount)
 }
 
 func (r *MCPServerReconciler) applyStatus(

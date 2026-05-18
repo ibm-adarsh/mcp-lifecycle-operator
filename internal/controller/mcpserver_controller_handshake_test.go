@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -446,6 +447,134 @@ var _ = Describe("MCPServer Controller - MCP Handshake Validation", func() {
 		})
 		Expect(err).NotTo(HaveOccurred())
 
+		Consistently(fr.Events, 300*time.Millisecond, 20*time.Millisecond).ShouldNot(Receive())
+	})
+
+	It("should emit a Warning MCPHandshakeFailed event only when handshake error message changes", func() {
+		failMsg := "intentional failure"
+		reconciler, fr := newReconcilerForTestWithFakeEvents(k8sClient, k8sClient.Scheme())
+		reconciler.MCPDialer = func(ctx context.Context, url string) (*mcpv1alpha1.MCPServerInfo, error) {
+			return nil, fmt.Errorf("%s", failMsg)
+		}
+
+		By("Initial reconciliation creates deployment")
+		_, err := reconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		drainFakeRecorderEvents(fr)
+
+		By("Simulating deployment becoming available")
+		deployment := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, client.ObjectKey{
+			Name: resourceName, Namespace: "default",
+		}, deployment)).To(Succeed())
+		deployment.Status.Replicas = 1
+		deployment.Status.ReadyReplicas = 1
+		deployment.Status.Conditions = []appsv1.DeploymentCondition{
+			{Type: appsv1.DeploymentAvailable, Status: corev1.ConditionTrue},
+			{Type: appsv1.DeploymentProgressing, Status: corev1.ConditionTrue},
+		}
+		Expect(k8sClient.Status().Update(ctx, deployment)).To(Succeed())
+
+		By("First handshake failure — Warning event emitted once")
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		var handshakeFailedEvent string
+		Eventually(fr.Events).Should(Receive(&handshakeFailedEvent))
+		Expect(handshakeFailedEvent).To(ContainSubstring(corev1.EventTypeWarning))
+		Expect(handshakeFailedEvent).To(ContainSubstring(ReasonMCPEndpointUnavailable))
+		Expect(handshakeFailedEvent).To(ContainSubstring(failMsg))
+
+		By("Second reconcile with same error — no duplicate handshake failed event")
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Consistently(fr.Events, 300*time.Millisecond, 20*time.Millisecond).ShouldNot(Receive())
+	})
+
+	It("should emit MCPHandshakeRetriesExhausted once when max handshake retries is reached", func() {
+		reconciler, fr := newReconcilerForTestWithFakeEvents(k8sClient, k8sClient.Scheme())
+		reconciler.MCPDialer = func(ctx context.Context, url string) (*mcpv1alpha1.MCPServerInfo, error) {
+			return nil, fmt.Errorf("intentional failure")
+		}
+
+		By("Initial reconciliation creates deployment")
+		_, err := reconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		drainFakeRecorderEvents(fr)
+
+		By("Simulating deployment becoming available")
+		deployment := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, client.ObjectKey{
+			Name: resourceName, Namespace: "default",
+		}, deployment)).To(Succeed())
+		deployment.Status.Replicas = 1
+		deployment.Status.ReadyReplicas = 1
+		deployment.Status.Conditions = []appsv1.DeploymentCondition{
+			{Type: appsv1.DeploymentAvailable, Status: corev1.ConditionTrue},
+			{Type: appsv1.DeploymentProgressing, Status: corev1.ConditionTrue},
+		}
+		Expect(k8sClient.Status().Update(ctx, deployment)).To(Succeed())
+
+		By("Reconciling until handshake retries are exhausted")
+		for i := 0; i < maxMCPHandshakeRetries; i++ {
+			result, recErr := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(recErr).NotTo(HaveOccurred())
+			if i < maxMCPHandshakeRetries-1 {
+				Expect(result.RequeueAfter).To(BeNumerically(">", 0))
+			}
+		}
+
+		var collected []string
+		Eventually(func(g Gomega) {
+			for {
+				select {
+				case ev := <-fr.Events:
+					collected = append(collected, ev)
+				default:
+					goto check
+				}
+			}
+		check:
+			exhausted := 0
+			for _, ev := range collected {
+				if strings.Contains(ev, "retries exhausted") {
+					exhausted++
+				}
+			}
+			g.Expect(exhausted).To(Equal(1))
+		}).Should(Succeed())
+		var exhaustedEvent string
+		for _, ev := range collected {
+			if strings.Contains(ev, "retries exhausted") {
+				exhaustedEvent = ev
+				break
+			}
+		}
+		Expect(exhaustedEvent).To(ContainSubstring(corev1.EventTypeWarning))
+		Expect(exhaustedEvent).To(ContainSubstring(ReasonMCPEndpointUnavailable))
+		Expect(exhaustedEvent).To(ContainSubstring(resourceName))
+
+		mcpServer := &mcpv1alpha1.MCPServer{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
+		Expect(mcpServer.Status.HandshakeRetryCount).To(BeNumerically(">=", maxMCPHandshakeRetries))
+
+		By("Further reconcile — no duplicate exhausted event")
+		drainFakeRecorderEvents(fr)
+		result, err := reconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RequeueAfter).To(BeZero())
 		Consistently(fr.Events, 300*time.Millisecond, 20*time.Millisecond).ShouldNot(Receive())
 	})
 
