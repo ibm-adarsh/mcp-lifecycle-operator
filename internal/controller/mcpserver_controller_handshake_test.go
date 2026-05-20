@@ -487,6 +487,7 @@ var _ = Describe("MCPServer Controller - MCP Handshake Validation", func() {
 		Eventually(fr.Events).Should(Receive(&handshakeFailedEvent))
 		Expect(handshakeFailedEvent).To(ContainSubstring(corev1.EventTypeWarning))
 		Expect(handshakeFailedEvent).To(ContainSubstring(ReasonMCPEndpointUnavailable))
+		Expect(handshakeFailedEvent).To(ContainSubstring(resourceName))
 		Expect(handshakeFailedEvent).To(ContainSubstring(failMsg))
 
 		By("Second reconcile with same error — no duplicate handshake failed event")

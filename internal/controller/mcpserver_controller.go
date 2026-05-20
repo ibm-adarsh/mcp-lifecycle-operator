@@ -1355,14 +1355,16 @@ func (r *MCPServerReconciler) emitConfigurationInvalid(mcpServer *mcpv1alpha1.MC
 	if r.Recorder == nil {
 		return
 	}
-	r.Recorder.Eventf(mcpServer, nil, corev1.EventTypeWarning, validationErr.Reason, eventActionConfigurationValidation, "%s", validationErr.Message)
+	r.Recorder.Eventf(mcpServer, nil, corev1.EventTypeWarning, validationErr.Reason, eventActionConfigurationValidation,
+		"MCPServer %s: %s", mcpServer.Name, validationErr.Message)
 }
 
 func (r *MCPServerReconciler) emitConfigurationAccepted(mcpServer *mcpv1alpha1.MCPServer) {
 	if r.Recorder == nil {
 		return
 	}
-	r.Recorder.Eventf(mcpServer, nil, corev1.EventTypeNormal, ReasonValid, eventActionConfigurationAccepted, "%s", "MCPServer configuration is valid; Accepted=True")
+	r.Recorder.Eventf(mcpServer, nil, corev1.EventTypeNormal, ReasonValid, eventActionConfigurationAccepted,
+		"MCPServer %s configuration is valid; Accepted=True", mcpServer.Name)
 }
 
 func (r *MCPServerReconciler) emitServerReady(mcpServer *mcpv1alpha1.MCPServer) {
@@ -1376,7 +1378,8 @@ func (r *MCPServerReconciler) emitMCPHandshakeFailed(mcpServer *mcpv1alpha1.MCPS
 	if r.Recorder == nil {
 		return
 	}
-	r.Recorder.Eventf(mcpServer, nil, corev1.EventTypeWarning, ReasonMCPEndpointUnavailable, eventActionMCPHandshakeFailed, "%s", message)
+	r.Recorder.Eventf(mcpServer, nil, corev1.EventTypeWarning, ReasonMCPEndpointUnavailable, eventActionMCPHandshakeFailed,
+		"MCP handshake failed for MCPServer %s: %s", mcpServer.Name, message)
 }
 
 func (r *MCPServerReconciler) emitMCPHandshakeRetriesExhausted(mcpServer *mcpv1alpha1.MCPServer, retryCount int32) {

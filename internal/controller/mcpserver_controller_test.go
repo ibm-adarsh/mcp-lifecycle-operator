@@ -152,6 +152,7 @@ var _ = Describe("MCPServer Controller", func() {
 			Eventually(fr.Events).Should(Receive(&first))
 			Expect(first).To(ContainSubstring(corev1.EventTypeNormal))
 			Expect(first).To(ContainSubstring(ReasonValid))
+			Expect(first).To(ContainSubstring(resourceName))
 			Expect(first).To(ContainSubstring("Accepted=True"))
 
 			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
