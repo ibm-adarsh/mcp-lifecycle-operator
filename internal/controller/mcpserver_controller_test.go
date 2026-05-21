@@ -76,13 +76,13 @@ func drainFakeRecorderEvents(fr *events.FakeRecorder) {
 
 // drainEvents returns all currently buffered events from ch without blocking.
 func drainEvents(ch <-chan string) []string {
-	var events []string
+	var drained []string
 	for {
 		select {
 		case ev := <-ch:
-			events = append(events, ev)
+			drained = append(drained, ev)
 		default:
-			return events
+			return drained
 		}
 	}
 }
