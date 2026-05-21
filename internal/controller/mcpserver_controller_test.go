@@ -74,6 +74,19 @@ func drainFakeRecorderEvents(fr *events.FakeRecorder) {
 	}
 }
 
+// drainEvents returns all currently buffered events from ch without blocking.
+func drainEvents(ch <-chan string) []string {
+	var events []string
+	for {
+		select {
+		case ev := <-ch:
+			events = append(events, ev)
+		default:
+			return events
+		}
+	}
+}
+
 // newTestMCPServer returns an MCPServer with standard test defaults:
 // namespace "default", SourceTypeContainerImage with ref
 // "docker.io/library/test-image:latest", and port 8080.

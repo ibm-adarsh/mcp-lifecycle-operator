@@ -552,15 +552,7 @@ var _ = Describe("MCPServer Controller - MCP Handshake Validation", func() {
 
 		var collected []string
 		Eventually(func(g Gomega) {
-			for {
-				select {
-				case ev := <-fr.Events:
-					collected = append(collected, ev)
-				default:
-					goto check
-				}
-			}
-		check:
+			collected = drainEvents(fr.Events)
 			exhausted := 0
 			for _, ev := range collected {
 				if strings.Contains(ev, "retries exhausted") {
