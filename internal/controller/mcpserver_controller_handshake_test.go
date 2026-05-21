@@ -496,6 +496,21 @@ var _ = Describe("MCPServer Controller - MCP Handshake Validation", func() {
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Consistently(fr.Events, 300*time.Millisecond, 20*time.Millisecond).ShouldNot(Receive())
+
+		By("Change error message — second Warning event emitted")
+		failMsg = "different failure message"
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{
+			NamespacedName: typeNamespacedName,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		var secondHandshakeFailedEvent string
+		Eventually(fr.Events).Should(Receive(&secondHandshakeFailedEvent))
+		Expect(secondHandshakeFailedEvent).To(ContainSubstring(corev1.EventTypeWarning))
+		Expect(secondHandshakeFailedEvent).To(ContainSubstring(ReasonMCPEndpointUnavailable))
+		Expect(secondHandshakeFailedEvent).To(ContainSubstring(resourceName))
+		Expect(secondHandshakeFailedEvent).To(ContainSubstring(failMsg))
+		Expect(secondHandshakeFailedEvent).NotTo(Equal(handshakeFailedEvent))
 	})
 
 	It("should emit MCPHandshakeRetriesExhausted once when max handshake retries is reached", func() {
