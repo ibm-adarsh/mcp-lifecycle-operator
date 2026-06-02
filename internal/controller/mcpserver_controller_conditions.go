@@ -111,7 +111,7 @@ func (r *MCPServerReconciler) getPodFailureMessage(
 	}
 
 	podList := &corev1.PodList{}
-	if err := r.List(ctx, podList,
+	if err := r.APIReader.List(ctx, podList,
 		client.InNamespace(deployment.Namespace),
 		client.MatchingLabelsSelector{Selector: selector},
 	); err != nil {
@@ -289,6 +289,12 @@ func duplicateHandshakeUnavailable(conditions []metav1.Condition, message string
 	prevReady := meta.FindStatusCondition(conditions, ConditionTypeReady)
 	return prevReady != nil && prevReady.Status == metav1.ConditionFalse &&
 		prevReady.Reason == ReasonMCPEndpointUnavailable && prevReady.Message == message
+}
+
+func duplicateDeploymentUnavailable(conditions []metav1.Condition, message string) bool {
+	prevReady := meta.FindStatusCondition(conditions, ConditionTypeReady)
+	return prevReady != nil && prevReady.Status == metav1.ConditionFalse &&
+		prevReady.Reason == ReasonDeploymentUnavailable && prevReady.Message == message
 }
 
 func duplicateServiceUnavailable(conditions []metav1.Condition, message string) bool {

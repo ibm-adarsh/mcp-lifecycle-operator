@@ -113,6 +113,8 @@ const (
 	eventActionMCPHandshakeFailed = "MCPHandshakeFailed"
 	// eventActionMCPHandshakeRetriesExhausted is the reporting action when handshake retries are exhausted.
 	eventActionMCPHandshakeRetriesExhausted = "MCPHandshakeRetriesExhausted"
+	// eventActionDeploymentReconcileFailed is the reporting action when Deployment reconciliation fails.
+	eventActionDeploymentReconcileFailed = "DeploymentReconcileFailed"
 	// eventActionServiceReconcileFailed is the reporting action when Service reconciliation fails.
 	eventActionServiceReconcileFailed = "ServiceReconcileFailed"
 
@@ -154,6 +156,7 @@ type MCPServerReconciler struct {
 	Scheme    *runtime.Scheme
 	Recorder  events.EventRecorder
 	MCPDialer func(ctx context.Context, url string) (*mcpv1alpha1.MCPServerInfo, error) // nil = use real MCP handshake
+	APIReader client.Reader
 }
 
 // +kubebuilder:rbac:groups=mcp.x-k8s.io,resources=mcpservers,verbs=get;list;watch;create;update;patch;delete
@@ -250,6 +253,10 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 		recordCondition(mcpServer.Name, mcpServer.Namespace,
 			readyCondition.Type, string(readyCondition.Status), readyCondition.Reason)
+
+		if !duplicateDeploymentUnavailable(mcpServer.Status.Conditions, readyCondition.Message) {
+			r.emitDeploymentReconcileFailed(mcpServer, readyCondition.Message)
+		}
 
 		status := acv1alpha1.MCPServerStatus().
 			WithObservedGeneration(mcpServer.Generation).
@@ -509,6 +516,14 @@ func (r *MCPServerReconciler) emitServerReady(mcpServer *mcpv1alpha1.MCPServer) 
 	r.Recorder.Eventf(mcpServer, nil, corev1.EventTypeNormal, ReasonAvailable, eventActionServerReady, "MCPServer %s is ready; Ready=True", mcpServer.Name)
 }
 
+func (r *MCPServerReconciler) emitDeploymentReconcileFailed(mcpServer *mcpv1alpha1.MCPServer, message string) {
+	if r.Recorder == nil {
+		return
+	}
+	r.Recorder.Eventf(mcpServer, nil, corev1.EventTypeWarning, ReasonDeploymentUnavailable, eventActionDeploymentReconcileFailed,
+		"MCPServer %s: %s", mcpServer.Name, message)
+}
+
 func (r *MCPServerReconciler) emitServiceReconcileFailed(mcpServer *mcpv1alpha1.MCPServer, message string) {
 	if r.Recorder == nil {
 		return
@@ -571,7 +586,11 @@ func (r *MCPServerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&mcpv1alpha1.MCPServer{}).
+		For(&mcpv1alpha1.MCPServer{}, builder.WithPredicates(predicate.Or(
+			predicate.GenerationChangedPredicate{},
+			predicate.AnnotationChangedPredicate{},
+			predicate.LabelChangedPredicate{},
+		))).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
 		Watches(

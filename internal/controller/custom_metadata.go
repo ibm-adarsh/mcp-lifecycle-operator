@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"strings"
 
 	mcpv1alpha1 "github.com/kubernetes-sigs/mcp-lifecycle-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -20,6 +21,8 @@ var reservedLabelKeys = map[string]bool{
 	LabelKeyMCPServer: true,
 }
 
+const reservedAnnotationPrefix = "mcp.x-k8s.io/"
+
 func filterReservedKeys(m map[string]string) map[string]string {
 	if len(m) == 0 {
 		return m
@@ -34,24 +37,27 @@ func filterReservedKeys(m map[string]string) map[string]string {
 	return filtered
 }
 
-// mergeMaps is a custom function aimed at merging maps
-// It will merge maps with exception of attempts to override
-// application defined map keys
+func filterReservedAnnotationKeys(m map[string]string) map[string]string {
+	if len(m) == 0 {
+		return m
+	}
+	filtered := make(map[string]string, len(m))
+	for k, v := range m {
+		if strings.HasPrefix(k, reservedAnnotationPrefix) {
+			continue
+		}
+		filtered[k] = v
+	}
+	return filtered
+}
+
+// mergeMaps merges all entries from src into dst.
+// Callers are responsible for filtering reserved keys before calling.
 func mergeMaps(dst, src map[string]string) error {
 	if dst == nil {
 		return ErrNilMap
 	}
-	if len(src) == 0 {
-		return nil
-	}
-
-	for k, v := range src {
-		if reservedLabelKeys[k] {
-			continue
-		}
-
-		dst[k] = v
-	}
+	maps.Copy(dst, src)
 	return nil
 }
 
@@ -73,6 +79,8 @@ func applyCustomDeploymentMetadata(mcpServer *mcpv1alpha1.MCPServer, deployment 
 		delete(deployment.Annotations, managedExtraLabels)
 	}
 
+	effectiveAnnotations := filterReservedAnnotationKeys(mcpServer.Spec.ExtraAnnotations)
+
 	currentAnnotations := make(map[string]string)
 	if managedAnnotations, ok := deployment.Annotations[managedExtraAnnotations]; ok {
 		if err := json.Unmarshal([]byte(managedAnnotations), &currentAnnotations); err != nil {
@@ -80,7 +88,7 @@ func applyCustomDeploymentMetadata(mcpServer *mcpv1alpha1.MCPServer, deployment 
 		}
 	}
 
-	if !maps.Equal(mcpServer.Spec.ExtraAnnotations, currentAnnotations) {
+	if !maps.Equal(effectiveAnnotations, currentAnnotations) {
 		for key := range currentAnnotations {
 			delete(deployment.Annotations, key)
 			delete(deployment.Spec.Template.Annotations, key)
@@ -89,7 +97,7 @@ func applyCustomDeploymentMetadata(mcpServer *mcpv1alpha1.MCPServer, deployment 
 	}
 
 	if len(effectiveLabels) == 0 &&
-		len(mcpServer.Spec.ExtraAnnotations) == 0 &&
+		len(effectiveAnnotations) == 0 &&
 		len(currentLabels) == 0 &&
 		len(currentAnnotations) == 0 {
 		return nil
@@ -101,7 +109,7 @@ func applyCustomDeploymentMetadata(mcpServer *mcpv1alpha1.MCPServer, deployment 
 		}
 		if err := mergeMaps(
 			deployment.Labels,
-			mcpServer.Spec.ExtraLabels,
+			effectiveLabels,
 		); err != nil {
 			return fmt.Errorf("appending deployment labels failed; %w", err)
 		}
@@ -110,19 +118,19 @@ func applyCustomDeploymentMetadata(mcpServer *mcpv1alpha1.MCPServer, deployment 
 		}
 		if err := mergeMaps(
 			deployment.Spec.Template.Labels,
-			mcpServer.Spec.ExtraLabels,
+			effectiveLabels,
 		); err != nil {
 			return fmt.Errorf("appending pod template labels failed; %w", err)
 		}
 	}
 
-	if mcpServer.Spec.ExtraAnnotations != nil {
+	if len(effectiveAnnotations) > 0 {
 		if deployment.Annotations == nil {
 			deployment.Annotations = make(map[string]string)
 		}
 		if err := mergeMaps(
 			deployment.Annotations,
-			mcpServer.Spec.ExtraAnnotations,
+			effectiveAnnotations,
 		); err != nil {
 			return fmt.Errorf("appending deployment annotations failed; %w", err)
 		}
@@ -131,7 +139,7 @@ func applyCustomDeploymentMetadata(mcpServer *mcpv1alpha1.MCPServer, deployment 
 		}
 		if err := mergeMaps(
 			deployment.Spec.Template.Annotations,
-			mcpServer.Spec.ExtraAnnotations,
+			effectiveAnnotations,
 		); err != nil {
 			return fmt.Errorf("appending pod template annotations failed; %w", err)
 		}
@@ -149,7 +157,7 @@ func applyCustomDeploymentMetadata(mcpServer *mcpv1alpha1.MCPServer, deployment 
 		deployment.Annotations[managedExtraLabels] = string(extraLabelsByte)
 	}
 
-	extraAnnotationsByte, err := json.Marshal(mcpServer.Spec.ExtraAnnotations)
+	extraAnnotationsByte, err := json.Marshal(effectiveAnnotations)
 	if err != nil {
 		return fmt.Errorf("marshaling .spec.extraAnnotations failed; %w", err)
 	}
@@ -177,6 +185,8 @@ func applyCustomServiceMetadata(mcpServer *mcpv1alpha1.MCPServer, service *corev
 		delete(service.Annotations, managedExtraLabels)
 	}
 
+	effectiveAnnotations := filterReservedAnnotationKeys(mcpServer.Spec.ExtraAnnotations)
+
 	currentAnnotations := make(map[string]string)
 	if managedAnnotations, ok := service.Annotations[managedExtraAnnotations]; ok {
 		if err := json.Unmarshal([]byte(managedAnnotations), &currentAnnotations); err != nil {
@@ -184,7 +194,7 @@ func applyCustomServiceMetadata(mcpServer *mcpv1alpha1.MCPServer, service *corev
 		}
 	}
 
-	if !maps.Equal(mcpServer.Spec.ExtraAnnotations, currentAnnotations) {
+	if !maps.Equal(effectiveAnnotations, currentAnnotations) {
 		for key := range currentAnnotations {
 			delete(service.Annotations, key)
 		}
@@ -192,7 +202,7 @@ func applyCustomServiceMetadata(mcpServer *mcpv1alpha1.MCPServer, service *corev
 	}
 
 	if len(effectiveLabels) == 0 &&
-		len(mcpServer.Spec.ExtraAnnotations) == 0 &&
+		len(effectiveAnnotations) == 0 &&
 		len(currentLabels) == 0 &&
 		len(currentAnnotations) == 0 {
 		return nil
@@ -207,13 +217,13 @@ func applyCustomServiceMetadata(mcpServer *mcpv1alpha1.MCPServer, service *corev
 	}
 
 	if len(effectiveLabels) > 0 {
-		if err := mergeMaps(service.Labels, mcpServer.Spec.ExtraLabels); err != nil {
+		if err := mergeMaps(service.Labels, effectiveLabels); err != nil {
 			return fmt.Errorf("appending service labels failed; %w", err)
 		}
 	}
 
-	if mcpServer.Spec.ExtraAnnotations != nil {
-		if err := mergeMaps(service.Annotations, mcpServer.Spec.ExtraAnnotations); err != nil {
+	if len(effectiveAnnotations) > 0 {
+		if err := mergeMaps(service.Annotations, effectiveAnnotations); err != nil {
 			return fmt.Errorf("appending service annotations failed; %w", err)
 		}
 	}
@@ -226,7 +236,7 @@ func applyCustomServiceMetadata(mcpServer *mcpv1alpha1.MCPServer, service *corev
 		service.Annotations[managedExtraLabels] = string(extraLabelsByte)
 	}
 
-	extraAnnotationsByte, err := json.Marshal(mcpServer.Spec.ExtraAnnotations)
+	extraAnnotationsByte, err := json.Marshal(effectiveAnnotations)
 	if err != nil {
 		return fmt.Errorf("marshaling .spec.extraAnnotations failed; %w", err)
 	}
@@ -278,6 +288,8 @@ func deploymentLabelsChanged(mcpServer *mcpv1alpha1.MCPServer, deployment *appsv
 }
 
 func deploymentAnnotationsChanged(mcpServer *mcpv1alpha1.MCPServer, deployment *appsv1.Deployment) bool {
+	effectiveAnnotations := filterReservedAnnotationKeys(mcpServer.Spec.ExtraAnnotations)
+
 	var currentAnnotations map[string]string
 	vals, ok := deployment.Annotations[managedExtraAnnotations]
 	if ok {
@@ -286,12 +298,12 @@ func deploymentAnnotationsChanged(mcpServer *mcpv1alpha1.MCPServer, deployment *
 		}
 
 		if len(currentAnnotations) > 0 {
-			if len(mcpServer.Spec.ExtraAnnotations) != 0 &&
-				!maps.Equal(currentAnnotations, mcpServer.Spec.ExtraAnnotations) {
+			if len(effectiveAnnotations) != 0 &&
+				!maps.Equal(currentAnnotations, effectiveAnnotations) {
 				return true
 			}
 
-			if len(mcpServer.Spec.ExtraAnnotations) == 0 {
+			if len(effectiveAnnotations) == 0 {
 				return true
 			}
 
@@ -308,7 +320,7 @@ func deploymentAnnotationsChanged(mcpServer *mcpv1alpha1.MCPServer, deployment *
 	}
 
 	if len(currentAnnotations) == 0 &&
-		len(mcpServer.Spec.ExtraAnnotations) != 0 {
+		len(effectiveAnnotations) != 0 {
 		return true
 	}
 
@@ -353,6 +365,8 @@ func serviceLabelsChanged(mcpServer *mcpv1alpha1.MCPServer, service *corev1.Serv
 }
 
 func serviceAnnotationsChanged(mcpServer *mcpv1alpha1.MCPServer, service *corev1.Service) bool {
+	effectiveAnnotations := filterReservedAnnotationKeys(mcpServer.Spec.ExtraAnnotations)
+
 	var currentAnnotations map[string]string
 	vals, ok := service.Annotations[managedExtraAnnotations]
 	if ok {
@@ -361,12 +375,12 @@ func serviceAnnotationsChanged(mcpServer *mcpv1alpha1.MCPServer, service *corev1
 		}
 
 		if len(currentAnnotations) > 0 {
-			if len(mcpServer.Spec.ExtraAnnotations) != 0 &&
-				!maps.Equal(currentAnnotations, mcpServer.Spec.ExtraAnnotations) {
+			if len(effectiveAnnotations) != 0 &&
+				!maps.Equal(currentAnnotations, effectiveAnnotations) {
 				return true
 			}
 
-			if len(mcpServer.Spec.ExtraAnnotations) == 0 {
+			if len(effectiveAnnotations) == 0 {
 				return true
 			}
 
@@ -381,7 +395,7 @@ func serviceAnnotationsChanged(mcpServer *mcpv1alpha1.MCPServer, service *corev1
 	}
 
 	if len(currentAnnotations) == 0 &&
-		len(mcpServer.Spec.ExtraAnnotations) != 0 {
+		len(effectiveAnnotations) != 0 {
 		return true
 	}
 

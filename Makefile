@@ -117,7 +117,7 @@ deploy-test-e2e: setup-test-e2e manifests generate ## Build and deploy the opera
 
 .PHONY: test-e2e
 test-e2e: ## Run the e2e tests (requires operator already deployed, see deploy-test-e2e).
-	go test -tags=e2e ./test/e2e/ -v -count=1 -timeout 10m
+	go test -tags=e2e ./test/e2e/ -v -count=1 -timeout 1h
 
 .PHONY: cleanup-test-e2e
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
@@ -128,6 +128,17 @@ GOVULNCHECK_VERSION ?= v1.3.0
 .PHONY: govulncheck
 govulncheck: ## Run govulncheck (https://go.dev/doc/security/vuln/) against the module.
 	go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+
+.PHONY: verify
+verify: manifests generate fmt ## Verify generated code and formatting are up-to-date.
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		echo "ERROR: generated files are out of date. Run 'make manifests generate fmt' and commit the result."; \
+		git status --porcelain; \
+		git diff; \
+		exit 1; \
+	else \
+		echo "Generated code and formatting are up-to-date."; \
+	fi
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter

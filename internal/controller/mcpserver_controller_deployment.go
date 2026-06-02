@@ -59,6 +59,9 @@ func (r *MCPServerReconciler) reconcileDeployment(
 	err = r.Get(ctx, client.ObjectKey{Name: deployment.Name, Namespace: deployment.Namespace}, existingDeployment)
 	if err != nil && apierrors.IsNotFound(err) {
 		logger.Info("Creating Deployment", "name", deployment.Name)
+		if err := applyCustomDeploymentMetadata(mcpServer, deployment); err != nil {
+			return nil, fmt.Errorf("applying custom metadata failed; %w", err)
+		}
 		if err := r.Create(ctx, deployment); err != nil {
 			logger.Error(err, "Failed to create Deployment")
 			return nil, err
@@ -138,6 +141,10 @@ func deploymentNeedsUpdate(mcpServer *mcpv1alpha1.MCPServer, existing, desired *
 		return true
 	}
 
+	if len(newPodSpec.Containers) == 0 {
+		return false // update would be rejected anyways by api server
+	}
+
 	return !equality.Semantic.DeepDerivative(newPodSpec, oldPodSpec) ||
 		// Explicit DeepEqual checks for fields that can be zeroed/removed by the user.
 		// DeepDerivative skips zero-value fields in the desired spec, so removals
@@ -149,6 +156,8 @@ func deploymentNeedsUpdate(mcpServer *mcpv1alpha1.MCPServer, existing, desired *
 		!equality.Semantic.DeepEqual(oldPodSpec.Volumes, newPodSpec.Volumes) ||
 		!equality.Semantic.DeepEqual(oldPodSpec.Containers[0].VolumeMounts, newPodSpec.Containers[0].VolumeMounts) ||
 		!equality.Semantic.DeepEqual(oldPodSpec.Containers[0].Resources, newPodSpec.Containers[0].Resources) ||
+		!equality.Semantic.DeepEqual(oldPodSpec.Containers[0].Ports, newPodSpec.Containers[0].Ports) ||
+		!equality.Semantic.DeepEqual(oldPodSpec.Containers[0].SecurityContext, newPodSpec.Containers[0].SecurityContext) ||
 		!equality.Semantic.DeepEqual(oldPodSpec.Containers[0].LivenessProbe, newPodSpec.Containers[0].LivenessProbe) ||
 		!equality.Semantic.DeepEqual(oldPodSpec.Containers[0].ReadinessProbe, newPodSpec.Containers[0].ReadinessProbe) ||
 		oldPodSpec.ServiceAccountName != newPodSpec.ServiceAccountName ||
@@ -228,22 +237,17 @@ func (r *MCPServerReconciler) createDeployment(mcpServer *mcpv1alpha1.MCPServer)
 		container.Resources = *mcpServer.Spec.Runtime.Resources
 	}
 
-	// Apply health probes.
-	// User-specified probes are passed directly to the container spec without any
-	// transformation, providing full compatibility with the Kubernetes Probe API.
-	// This allows users to configure all probe types (httpGet, tcpSocket, exec, grpc)
-	// and all parameters (delays, periods, thresholds) using standard Kubernetes
-	// probe configuration.
+	// Apply health probes. Zero-valued timing fields are filled with Kubernetes
+	// API server defaults via withProbeDefaults so that DeepEqual comparisons in
+	// deploymentNeedsUpdate match the API-server-defaulted existing spec.
 	//
 	// When no readiness probe is specified, a default TCP socket probe is injected
-	// targeting the configured MCP port. This ensures that containers not listening
-	// on the expected port will not report as Ready. The controller-level MCP
-	// handshake provides the semantic protocol validation.
+	// targeting the configured MCP port.
 	if mcpServer.Spec.Runtime.Health.LivenessProbe != nil {
-		container.LivenessProbe = mcpServer.Spec.Runtime.Health.LivenessProbe
+		container.LivenessProbe = withProbeDefaults(mcpServer.Spec.Runtime.Health.LivenessProbe)
 	}
 	if mcpServer.Spec.Runtime.Health.ReadinessProbe != nil {
-		container.ReadinessProbe = mcpServer.Spec.Runtime.Health.ReadinessProbe
+		container.ReadinessProbe = withProbeDefaults(mcpServer.Spec.Runtime.Health.ReadinessProbe)
 	} else {
 		container.ReadinessProbe = defaultMCPReadinessProbe(mcpServer.Spec.Config.Port)
 	}
@@ -280,7 +284,14 @@ func (r *MCPServerReconciler) createDeployment(mcpServer *mcpv1alpha1.MCPServer)
 	if mcpServer.Spec.Runtime.Security.ServiceAccountName != "" {
 		deployment.Spec.Template.Spec.ServiceAccountName = mcpServer.Spec.Runtime.Security.ServiceAccountName
 	}
-	deployment.Spec.Template.Spec.SecurityContext = mcpServer.Spec.Runtime.Security.PodSecurityContext
+	// Default to an empty PodSecurityContext so the desired spec matches the
+	// API server default. Without this, nil vs &PodSecurityContext{} causes
+	// deploymentNeedsUpdate to return true on every reconciliation.
+	if mcpServer.Spec.Runtime.Security.PodSecurityContext != nil {
+		deployment.Spec.Template.Spec.SecurityContext = mcpServer.Spec.Runtime.Security.PodSecurityContext
+	} else {
+		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{}
+	}
 
 	return deployment, nil
 }
@@ -361,11 +372,32 @@ func defaultContainerSecurityContext() *corev1.SecurityContext {
 // a GET probe would reject valid MCP servers that do not serve GET.
 // The controller-level MCP handshake provides the semantic protocol validation.
 func defaultMCPReadinessProbe(port int32) *corev1.Probe {
-	return &corev1.Probe{
+	return withProbeDefaults(&corev1.Probe{
 		ProbeHandler: corev1.ProbeHandler{
 			TCPSocket: &corev1.TCPSocketAction{
 				Port: intstr.FromInt32(port),
 			},
 		},
+	})
+}
+
+// withProbeDefaults fills in zero-valued probe timing fields with the
+// Kubernetes API server defaults. Without this, DeepEqual in
+// deploymentNeedsUpdate flags a diff between the desired spec and the
+// API-server-defaulted existing spec on every reconciliation.
+func withProbeDefaults(probe *corev1.Probe) *corev1.Probe {
+	out := *probe
+	if out.FailureThreshold == 0 {
+		out.FailureThreshold = 3
 	}
+	if out.PeriodSeconds == 0 {
+		out.PeriodSeconds = 10
+	}
+	if out.SuccessThreshold == 0 {
+		out.SuccessThreshold = 1
+	}
+	if out.TimeoutSeconds == 0 {
+		out.TimeoutSeconds = 1
+	}
+	return &out
 }

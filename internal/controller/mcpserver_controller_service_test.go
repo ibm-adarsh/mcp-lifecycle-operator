@@ -63,8 +63,9 @@ var _ = Describe("MCPServer Controller - Address URL", func() {
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 
 			controllerReconciler := &MCPServerReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:    k8sClient,
+				Scheme:    k8sClient.Scheme(),
+				APIReader: k8sClient,
 			}
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
@@ -83,8 +84,9 @@ var _ = Describe("MCPServer Controller - Address URL", func() {
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 
 			controllerReconciler := &MCPServerReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:    k8sClient,
+				Scheme:    k8sClient.Scheme(),
+				APIReader: k8sClient,
 			}
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
@@ -103,8 +105,9 @@ var _ = Describe("MCPServer Controller - Address URL", func() {
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 
 			controllerReconciler := &MCPServerReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:    k8sClient,
+				Scheme:    k8sClient.Scheme(),
+				APIReader: k8sClient,
 			}
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
@@ -123,8 +126,9 @@ var _ = Describe("MCPServer Controller - Address URL", func() {
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 
 			controllerReconciler := &MCPServerReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:    k8sClient,
+				Scheme:    k8sClient.Scheme(),
+				APIReader: k8sClient,
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -169,8 +173,9 @@ var _ = Describe("MCPServer Controller - Service Update", func() {
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 
 			controllerReconciler := &MCPServerReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:    k8sClient,
+				Scheme:    k8sClient.Scheme(),
+				APIReader: k8sClient,
 			}
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
@@ -237,8 +242,9 @@ var _ = Describe("MCPServer Controller - reconcileService", func() {
 		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
 
 		reconciler := &MCPServerReconciler{
-			Client: k8sClient,
-			Scheme: k8sClient.Scheme(),
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			APIReader: k8sClient,
 		}
 
 		err := reconciler.reconcileService(ctx, mcpServer)
@@ -259,8 +265,9 @@ var _ = Describe("MCPServer Controller - reconcileService", func() {
 		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
 
 		reconciler := &MCPServerReconciler{
-			Client: k8sClient,
-			Scheme: k8sClient.Scheme(),
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			APIReader: k8sClient,
 		}
 
 		Expect(reconciler.reconcileService(ctx, mcpServer)).To(Succeed())
@@ -295,8 +302,9 @@ var _ = Describe("MCPServer Controller - Stateless Service", func() {
 		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
 
 		reconciler := &MCPServerReconciler{
-			Client: k8sClient,
-			Scheme: k8sClient.Scheme(),
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			APIReader: k8sClient,
 		}
 
 		err := reconciler.reconcileService(ctx, mcpServer)
@@ -318,8 +326,9 @@ var _ = Describe("MCPServer Controller - Stateless Service", func() {
 		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
 
 		reconciler := &MCPServerReconciler{
-			Client: k8sClient,
-			Scheme: k8sClient.Scheme(),
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			APIReader: k8sClient,
 		}
 
 		err := reconciler.reconcileService(ctx, mcpServer)
@@ -342,8 +351,9 @@ var _ = Describe("MCPServer Controller - Stateless Service", func() {
 		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
 
 		reconciler := &MCPServerReconciler{
-			Client: k8sClient,
-			Scheme: k8sClient.Scheme(),
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			APIReader: k8sClient,
 		}
 
 		err := reconciler.reconcileService(ctx, mcpServer)
@@ -363,8 +373,9 @@ var _ = Describe("MCPServer Controller - Stateless Service", func() {
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 
 		controllerReconciler := &MCPServerReconciler{
-			Client: k8sClient,
-			Scheme: k8sClient.Scheme(),
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			APIReader: k8sClient,
 		}
 
 		By("Reconciling to create the service with ClientIP affinity")
@@ -400,8 +411,9 @@ var _ = Describe("MCPServer Controller - Stateless Service", func() {
 		Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 
 		controllerReconciler := &MCPServerReconciler{
-			Client: k8sClient,
-			Scheme: k8sClient.Scheme(),
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			APIReader: k8sClient,
 		}
 
 		By("Reconciling to create the service with no session affinity")
@@ -470,8 +482,9 @@ var _ = Describe("MCPServer Controller - Service Reconciliation Failures", func(
 		})
 
 		serviceFailureReconciler := &MCPServerReconciler{
-			Client: interceptedClient,
-			Scheme: k8sClient.Scheme(),
+			Client:    interceptedClient,
+			Scheme:    k8sClient.Scheme(),
+			APIReader: k8sClient,
 		}
 
 		By("Reconciling with service creation failure")
@@ -503,8 +516,9 @@ var _ = Describe("MCPServer Controller - Service Reconciliation Failures", func(
 	It("should update status with ServiceUnavailable when service update fails", func() {
 		By("Initial reconcile to create resources")
 		initialReconciler := &MCPServerReconciler{
-			Client: k8sClient,
-			Scheme: k8sClient.Scheme(),
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			APIReader: k8sClient,
 		}
 		_, err := initialReconciler.Reconcile(ctx, reconcile.Request{
 			NamespacedName: typeNamespacedName,
@@ -532,8 +546,9 @@ var _ = Describe("MCPServer Controller - Service Reconciliation Failures", func(
 		})
 
 		serviceFailureReconciler := &MCPServerReconciler{
-			Client: interceptedClient,
-			Scheme: k8sClient.Scheme(),
+			Client:    interceptedClient,
+			Scheme:    k8sClient.Scheme(),
+			APIReader: k8sClient,
 		}
 
 		By("Updating MCPServer spec to trigger service reconciliation")
@@ -716,8 +731,9 @@ var _ = Describe("MCPServer Controller - Server-Side Apply for Status", func() {
 		})
 
 		controllerReconciler := &MCPServerReconciler{
-			Client: interceptedClient,
-			Scheme: k8sClient.Scheme(),
+			Client:    interceptedClient,
+			Scheme:    k8sClient.Scheme(),
+			APIReader: k8sClient,
 		}
 
 		_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -728,5 +744,54 @@ var _ = Describe("MCPServer Controller - Server-Side Apply for Status", func() {
 		Expect(applyCallCount).To(BeNumerically(">", 0), "expected status updates to use SubResourceApply (SSA)")
 		Expect(updateCalled).To(BeFalse(), "status should not use SubResourceUpdate")
 		Expect(patchCalled).To(BeFalse(), "status should not use SubResourcePatch")
+	})
+})
+
+var _ = Describe("MCPServer Controller - Service ExtraLabels/ExtraAnnotations on creation", func() {
+	ctx := context.Background()
+
+	It("should apply ExtraLabels and ExtraAnnotations on initial Service creation", func() {
+		mcpServer := newTestMCPServer("test-svc-extra-metadata")
+		mcpServer.Spec.ExtraLabels = map[string]string{
+			"team": "platform",
+			"env":  "staging",
+		}
+		mcpServer.Spec.ExtraAnnotations = map[string]string{
+			"example.com/owner": "team-a",
+		}
+		Expect(k8sClient.Create(ctx, mcpServer)).To(Succeed())
+		defer func() {
+			err := k8sClient.Get(ctx, client.ObjectKey{Name: "test-svc-extra-metadata", Namespace: "default"}, mcpServer)
+			if err == nil {
+				Expect(k8sClient.Delete(ctx, mcpServer)).To(Succeed())
+			}
+		}()
+
+		reconciler := &MCPServerReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			APIReader: k8sClient,
+		}
+
+		err := reconciler.reconcileService(ctx, mcpServer)
+		Expect(err).NotTo(HaveOccurred())
+
+		createdService := &corev1.Service{}
+		err = k8sClient.Get(ctx, client.ObjectKey{
+			Name:      "test-svc-extra-metadata",
+			Namespace: "default",
+		}, createdService)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Verifying ExtraLabels on Service metadata")
+		Expect(createdService.Labels).To(HaveKeyWithValue("team", "platform"))
+		Expect(createdService.Labels).To(HaveKeyWithValue("env", "staging"))
+
+		By("Verifying ExtraAnnotations on Service metadata")
+		Expect(createdService.Annotations).To(HaveKeyWithValue("example.com/owner", "team-a"))
+
+		By("Verifying tracking annotations are set")
+		Expect(createdService.Annotations).To(HaveKey(managedExtraLabels))
+		Expect(createdService.Annotations).To(HaveKey(managedExtraAnnotations))
 	})
 })
