@@ -13,15 +13,15 @@ coverage:
     project:
       default:
         enabled: true
-        # Report coverage; do not fail PRs on small drops until we set a target.
-        threshold: null
+        target: 70%
+        threshold: 1%
         if_not_found: success
         if_no_uploads: success
         if_ci_failed: error
     patch:
       default:
         enabled: true
-        threshold: null
+        target: 80%
         if_not_found: success
         if_no_uploads: success
         if_ci_failed: error
