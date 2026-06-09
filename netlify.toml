@@ -1,6 +1,15 @@
+# Documentation is versioned with mike and published from the gh-pages branch.
+# GitHub Actions builds docs in .github/workflows/docs.yaml.
+#
+# Netlify settings (required once):
+#   Production branch: gh-pages
+#   Build command: (empty)
+#   Publish directory: /
+#
+# Until Netlify is pointed at gh-pages, builds from main will fail intentionally.
 [build]
   publish = "site"
-  command = "make build-docs-netlify"
+  command = "echo 'Docs are published from gh-pages by GitHub Actions. Point Netlify production branch to gh-pages. See site-src/README.md.' && exit 1"
 
 [build.environment]
   PYTHON_VERSION = "3.12"
