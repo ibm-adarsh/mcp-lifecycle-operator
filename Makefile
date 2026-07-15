@@ -75,7 +75,7 @@ COVER_PROFILE ?= cover.out
 COVER_OUTPUT_DIR ?= out
 
 .PHONY: verify-grafana-dashboard
-verify-grafana-dashboard: ## Validate Grafana dashboard JSON and PromQL references.
+verify-grafana-dashboard: kustomize ## Validate Grafana dashboard JSON and PromQL references.
 	chmod +x hack/verify-grafana-dashboard.sh
 	./hack/verify-grafana-dashboard.sh
 

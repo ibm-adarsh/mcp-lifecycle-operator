@@ -218,7 +218,7 @@ func metricSelectorsFromExpr(expr string) ([]string, error) {
 
 func splitYAMLDocuments(raw string) []string {
 	var docs []string
-	for _, part := range strings.Split(raw, "\n---") {
+	for part := range strings.SplitSeq(raw, "\n---") {
 		part = strings.TrimSpace(part)
 		if part != "" {
 			docs = append(docs, part)
