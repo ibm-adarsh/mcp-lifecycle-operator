@@ -33,7 +33,7 @@ if [[ -n "${PROMETHEUS_URL:-}" ]]; then
   )
   for q in "${queries[@]}"; do
     encoded="$(python3 -c "import urllib.parse; print(urllib.parse.quote('''${q}'''))")"
-    result="$(curl -sf "${PROMETHEUS_URL}/api/v1/query?query=${encoded}")"
+    result="$(curl -sf --connect-timeout 5 --max-time 15 "${PROMETHEUS_URL}/api/v1/query?query=${encoded}")"
     count="$(echo "${result}" | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d.get('data',{}).get('result',[])))")"
     echo "  query=${q} series=${count}"
     if [[ "${count}" -eq 0 ]]; then

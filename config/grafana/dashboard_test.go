@@ -19,10 +19,13 @@ package grafana_test
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/prometheus/prometheus/promql/parser"
+	"gopkg.in/yaml.v3"
 )
 
 const dashboardFile = "mcp-lifecycle-operator.json"
@@ -66,6 +69,10 @@ func TestDashboardJSONIsValid(t *testing.T) {
 
 	if root["uid"] != "mcp-lifecycle-operator" {
 		t.Errorf("expected uid mcp-lifecycle-operator, got %v", root["uid"])
+	}
+
+	if _, ok := root["__inputs"]; ok {
+		t.Error("dashboard must not use __inputs; use the datasource template variable for provisioning")
 	}
 
 	panels, ok := root["panels"].([]any)
@@ -115,11 +122,14 @@ func TestDashboardQueriesReferenceKnownMetrics(t *testing.T) {
 		}
 	}
 
-	selectorRE := regexp.MustCompile(`([a-zA-Z_:][a-zA-Z0-9_:]*)\s*[\{\[]`)
 	seen := map[string]struct{}{}
 	for _, expr := range exprs {
-		for _, match := range selectorRE.FindAllStringSubmatch(expr, -1) {
-			seen[match[1]] = struct{}{}
+		names, err := metricSelectorsFromExpr(expr)
+		if err != nil {
+			t.Fatalf("parse expr %q: %v", expr, err)
+		}
+		for _, name := range names {
+			seen[name] = struct{}{}
 		}
 	}
 
@@ -135,10 +145,86 @@ func TestDashboardQueriesReferenceKnownMetrics(t *testing.T) {
 }
 
 func TestDashboardKustomizationBuilds(t *testing.T) {
-	path := filepath.Join(".", dashboardFile)
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("dashboard file missing for kustomize: %v", err)
+	t.Helper()
+
+	kustomize := filepath.Join("..", "..", "bin", "kustomize")
+	if _, err := os.Stat(kustomize); err != nil {
+		t.Fatalf("kustomize binary missing at %s: %v", kustomize, err)
 	}
+
+	cmd := exec.Command(kustomize, "build", ".")
+	cmd.Dir = "."
+	out, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			t.Fatalf("kustomize build failed: %v\n%s", err, string(exitErr.Stderr))
+		}
+		t.Fatalf("kustomize build failed: %v", err)
+	}
+
+	docs := splitYAMLDocuments(string(out))
+	if len(docs) == 0 {
+		t.Fatal("kustomize build produced no documents")
+	}
+
+	var found bool
+	for _, doc := range docs {
+		var obj map[string]any
+		if err := yaml.Unmarshal([]byte(doc), &obj); err != nil {
+			t.Fatalf("parse kustomize output: %v", err)
+		}
+		if obj["kind"] != "ConfigMap" {
+			continue
+		}
+		meta, _ := obj["metadata"].(map[string]any)
+		labels, _ := meta["labels"].(map[string]any)
+		if labels["grafana_dashboard"] != "1" {
+			t.Errorf("expected grafana_dashboard=1 label, got %#v", labels)
+		}
+		data, _ := obj["data"].(map[string]any)
+		raw, ok := data["mcp-lifecycle-operator.json"].(string)
+		if !ok || raw == "" {
+			t.Fatal("ConfigMap missing mcp-lifecycle-operator.json data")
+		}
+		var dash map[string]any
+		if err := json.Unmarshal([]byte(raw), &dash); err != nil {
+			t.Fatalf("embedded dashboard is not valid JSON: %v", err)
+		}
+		if dash["uid"] != "mcp-lifecycle-operator" {
+			t.Errorf("embedded dashboard uid = %v, want mcp-lifecycle-operator", dash["uid"])
+		}
+		found = true
+	}
+	if !found {
+		t.Fatal("kustomize build did not produce Grafana dashboard ConfigMap")
+	}
+}
+
+func metricSelectorsFromExpr(expr string) ([]string, error) {
+	parsed, err := parser.ParseExpr(expr)
+	if err != nil {
+		return nil, err
+	}
+
+	var names []string
+	parser.Inspect(parsed, func(node parser.Node, _ []parser.Node) error {
+		if vs, ok := node.(*parser.VectorSelector); ok && vs.Name != "" {
+			names = append(names, vs.Name)
+		}
+		return nil
+	})
+	return names, nil
+}
+
+func splitYAMLDocuments(raw string) []string {
+	var docs []string
+	for _, part := range strings.Split(raw, "\n---") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			docs = append(docs, part)
+		}
+	}
+	return docs
 }
 
 func extractExprs(data []byte) []string {
