@@ -1,0 +1,15 @@
+# Optional Grafana dashboard provisioning for environments that use the
+# Grafana Helm chart sidecar (label grafana_dashboard: "1").
+# Apply with: kubectl apply -k config/grafana/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+configMapGenerator:
+  - name: grafana-dashboard-mcp-lifecycle-operator
+    files:
+      - mcp-lifecycle-operator.json
+    options:
+      labels:
+        grafana_dashboard: "1"
+      annotations:
+        grafana_folder: MCP Lifecycle Operator

@@ -141,6 +141,37 @@ spec:
 
 The repository maintains the full sample at [`config/prometheus/monitor.yaml`](https://github.com/kubernetes-sigs/mcp-lifecycle-operator/blob/main/config/prometheus/monitor.yaml). Wire it into your install by uncommenting the **`[PROMETHEUS]`** resource (`../prometheus`) in [`config/default/kustomization.yaml`](https://github.com/kubernetes-sigs/mcp-lifecycle-operator/blob/main/config/default/kustomization.yaml), or apply an equivalent manifest alongside kube-prometheus-stack. Add labels your Prometheus `ServiceMonitor` selector expects (for example `release: prometheus`).
 
+## Grafana dashboard
+
+The repository ships an example Grafana dashboard at [`config/grafana/mcp-lifecycle-operator.json`](https://github.com/kubernetes-sigs/mcp-lifecycle-operator/blob/main/config/grafana/mcp-lifecycle-operator.json). It visualizes:
+
+- **Overview** — `MCPServer` count, reconciliation success rate, error rate, and P95 latency
+- **Reconciliation** — duration heatmap, rate by result, requeue rate, and per-phase latency
+- **Resource health** — Accepted/Ready condition breakdown and deployment, Service, and NetworkPolicy failure rates
+- **Validation** — validation failures by reason
+- **Performance** — operator CPU/memory, active reconcile workers, and API server request rate
+
+Panels use only metrics that the operator exports today (`mcpserver_*` and controller-runtime `controller_runtime_*` series). ConfigMap/Secret watch metrics from early design notes are **not** included because they are not implemented.
+
+### Import via Grafana UI
+
+1. Open your Grafana instance and go to **Dashboards → New → Import**.
+2. Upload [`config/grafana/mcp-lifecycle-operator.json`](https://github.com/kubernetes-sigs/mcp-lifecycle-operator/blob/main/config/grafana/mcp-lifecycle-operator.json), or paste the [raw GitHub URL](https://raw.githubusercontent.com/kubernetes-sigs/mcp-lifecycle-operator/main/config/grafana/mcp-lifecycle-operator.json).
+3. Select your Prometheus data source when prompted (`DS_PROMETHEUS`).
+4. Save the dashboard.
+
+This follows the same **raw JSON + manual import** pattern used by [node-feature-discovery](https://github.com/kubernetes-sigs/node-feature-discovery/blob/master/docs/deployment/metrics.md) and the [Kubebuilder Grafana plugin](https://book.kubebuilder.io/plugins/available/grafana-v1-alpha.html).
+
+### Provision with Grafana sidecar (optional)
+
+If you run Grafana with the [kiwigrid sidecar](https://github.com/grafana/helm-charts/tree/main/charts/grafana) (for example via [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack)), apply the labeled ConfigMap:
+
+```bash
+kubectl apply -k config/grafana/
+```
+
+The Kustomize overlay sets `grafana_dashboard: "1"` and `grafana_folder: MCP Lifecycle Operator`, matching conventions from [Strimzi](https://github.com/strimzi/strimzi-kafka-operator) and kube-prometheus-stack.
+
 ## Next steps
 
 - **[Introduction](../introduction.md)** — Architecture and `MCPServer` overview (including status conditions)
