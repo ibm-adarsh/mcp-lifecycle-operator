@@ -86,7 +86,15 @@ Documentation is versioned with [mike](https://github.com/jimporter/mike) and pu
 
 ### Netlify configuration
 
-Netlify publishes the pre-built `gh-pages` branch (no build step). One-time setup:
+Netlify publishes the pre-built `gh-pages` branch (no build step). Complete these steps **in order** after the versioning PR merges:
+
+1. **Merge** the versioning PR to `main`
+2. **Bootstrap `latest`**: run **Actions → Docs → Deploy docs (manual)** with `v0.1.0` (or the current release tag)
+3. **Switch Netlify** production branch to `gh-pages` (build command empty, publish `/`)
+
+Until step 3, main-branch production Netlify builds fail by design; the last good production deploy stays live.
+
+Ongoing Netlify settings:
 
 1. **Production branch**: `gh-pages` (not `main`)
 2. **Build command**: (empty)
