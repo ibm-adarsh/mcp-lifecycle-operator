@@ -74,21 +74,21 @@ if [[ "${SET_DEFAULT}" == "true" ]]; then
 fi
 
 NETLIFY_CONFIG="${SCRIPT_ROOT}/hack/mkdocs/gh-pages-netlify.toml"
-NETLIFY_TMP="$(mktemp)"
-cp "${NETLIFY_CONFIG}" "${NETLIFY_TMP}"
+WORKTREE_DIR="$(mktemp -d)"
 
 echo "Ensuring Netlify configuration on gh-pages..."
 git fetch origin gh-pages
-git checkout gh-pages
-cp "${NETLIFY_TMP}" netlify.toml
-rm -f "${NETLIFY_TMP}"
+git worktree add -B gh-pages "${WORKTREE_DIR}" origin/gh-pages
+cp "${NETLIFY_CONFIG}" "${WORKTREE_DIR}/netlify.toml"
 
+pushd "${WORKTREE_DIR}" > /dev/null
 if ! git diff --quiet netlify.toml; then
   git add netlify.toml
   git commit -m "Ensure Netlify configuration for gh-pages publishing"
   git push origin gh-pages
 fi
+popd > /dev/null
 
-git checkout -
+git worktree remove "${WORKTREE_DIR}" --force
 
 echo "Documentation deployment complete."

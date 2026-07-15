@@ -2,7 +2,7 @@ name: Docs
 
 on:
   pull_request:
-    paths:
+    paths: &docs-paths
       - "site-src/**"
       - "mkdocs.yml"
       - "hack/mkdocs/**"
@@ -12,6 +12,7 @@ on:
   push:
     branches:
       - main
+    paths: *docs-paths
   release:
     types: [published]
   workflow_dispatch:
@@ -28,6 +29,11 @@ on:
         description: "Set latest as the default site version"
         type: boolean
         default: true
+
+# Serialize gh-pages deploys; keep PR lint runs independent.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('docs-lint-pr-{0}', github.event.pull_request.number) || 'docs-deploy-gh-pages' }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
