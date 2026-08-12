@@ -103,20 +103,22 @@ func TestDetectOperatorNamespace(t *testing.T) {
 	}
 }
 
-func TestLogLevelReconciler_UpdatesLevel(t *testing.T) {
+func reconcileLogLevel(t *testing.T, initialLevel zapcore.Level, configLevel string) uzap.AtomicLevel {
+	t.Helper()
+
 	scheme := runtime.NewScheme()
 	if err := corev1.AddToScheme(scheme); err != nil {
 		t.Fatalf("failed to add corev1 scheme: %v", err)
 	}
 
-	atomicLevel := uzap.NewAtomicLevelAt(uzap.InfoLevel)
+	atomicLevel := uzap.NewAtomicLevelAt(initialLevel)
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "mcp-lifecycle-operator-config",
 			Namespace: "system",
 		},
 		Data: map[string]string{
-			"log-level": "debug",
+			"log-level": configLevel,
 		},
 	}
 
@@ -135,45 +137,37 @@ func TestLogLevelReconciler_UpdatesLevel(t *testing.T) {
 		t.Fatalf("Reconcile() error = %v", err)
 	}
 
-	if atomicLevel.Level() != uzap.DebugLevel {
-		t.Fatalf("atomic level = %v, want debug", atomicLevel.Level())
-	}
+	return atomicLevel
 }
 
-func TestLogLevelReconciler_InvalidLevelIsIgnored(t *testing.T) {
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatalf("failed to add corev1 scheme: %v", err)
-	}
-
-	atomicLevel := uzap.NewAtomicLevelAt(uzap.InfoLevel)
-	cm := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "mcp-lifecycle-operator-config",
-			Namespace: "system",
+func TestLogLevelReconciler(t *testing.T) {
+	tests := []struct {
+		name        string
+		initial     zapcore.Level
+		configLevel string
+		want        zapcore.Level
+	}{
+		{
+			name:        "updates level",
+			initial:     uzap.InfoLevel,
+			configLevel: "debug",
+			want:        uzap.DebugLevel,
 		},
-		Data: map[string]string{
-			"log-level": "not-a-level",
+		{
+			name:        "ignores invalid level",
+			initial:     uzap.InfoLevel,
+			configLevel: "not-a-level",
+			want:        uzap.InfoLevel,
 		},
 	}
 
-	reconciler := &logLevelReconciler{
-		Client:      fake.NewClientBuilder().WithScheme(scheme).WithObjects(cm).Build(),
-		atomicLevel: atomicLevel,
-		key:         "log-level",
-	}
-
-	if _, err := reconciler.Reconcile(context.Background(), reconcile.Request{
-		NamespacedName: types.NamespacedName{
-			Namespace: "system",
-			Name:      "mcp-lifecycle-operator-config",
-		},
-	}); err != nil {
-		t.Fatalf("Reconcile() error = %v", err)
-	}
-
-	if atomicLevel.Level() != uzap.InfoLevel {
-		t.Fatalf("atomic level = %v, want info to be preserved", atomicLevel.Level())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			atomicLevel := reconcileLogLevel(t, tt.initial, tt.configLevel)
+			if atomicLevel.Level() != tt.want {
+				t.Fatalf("atomic level = %v, want %v", atomicLevel.Level(), tt.want)
+			}
+		})
 	}
 }
 

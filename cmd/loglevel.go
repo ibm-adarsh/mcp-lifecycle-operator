@@ -144,10 +144,6 @@ func setupLogLevelFromConfigMap(mgr ctrl.Manager, atomicLevel uzap.AtomicLevel, 
 		WithEventFilter(predicate.NewPredicateFuncs(func(obj client.Object) bool {
 			return obj.GetNamespace() == namespace && obj.GetName() == name
 		})).
-		WithOptions(controller.Options{NeedLeaderElection: boolPtr(false)}).
+		WithOptions(controller.Options{NeedLeaderElection: new(false)}).
 		Complete(reconciler)
-}
-
-func boolPtr(v bool) *bool {
-	return &v
 }
