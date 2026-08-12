@@ -371,7 +371,7 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			conditionToAC(readyCondition),
 		)
 
-	if readyConditionExposesAddress(&readyCondition) {
+	if readyCondition.Status == metav1.ConditionTrue && readyCondition.Reason == ReasonAvailable {
 		status = status.WithAddress(acv1alpha1.MCPServerAddress().
 			WithURL(mcpURL))
 	}
