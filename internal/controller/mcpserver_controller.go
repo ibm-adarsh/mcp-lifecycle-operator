@@ -331,6 +331,12 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	recordCondition(mcpServer.Name, mcpServer.Namespace,
 		readyCondition.Type, string(readyCondition.Status), readyCondition.Reason)
 
+	if readyCondition.Status == metav1.ConditionFalse &&
+		readyCondition.Reason == ReasonDeploymentUnavailable &&
+		!duplicateDeploymentUnavailable(mcpServer.Status.Conditions, readyCondition.Message) {
+		r.emitDeploymentReconcileFailed(mcpServer, readyCondition.Message)
+	}
+
 	// Build status
 	path := mcpServer.Spec.Config.Path
 	if path == "" {
@@ -360,12 +366,15 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		WithHandshakeRetryCount(handshakeRetryCount).
 		WithReplicas(ptr.Deref(existingDeployment.Spec.Replicas, 1)).
 		WithReadyReplicas(existingDeployment.Status.ReadyReplicas).
-		WithAddress(acv1alpha1.MCPServerAddress().
-			WithURL(mcpURL)).
 		WithConditions(
 			conditionToAC(acceptedCondition),
 			conditionToAC(readyCondition),
 		)
+
+	if readyConditionExposesAddress(&readyCondition) {
+		status = status.WithAddress(acv1alpha1.MCPServerAddress().
+			WithURL(mcpURL))
+	}
 
 	r.detectCapabilityChanges(mcpServer, serverInfo)
 

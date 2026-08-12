@@ -661,6 +661,19 @@ var _ = Describe("reconcileReadyCondition", func() {
 })
 
 var _ = Describe("status condition helpers", func() {
+	It("readyConditionExposesAddress returns true only for Ready=True with reason Available", func() {
+		Expect(readyConditionExposesAddress(nil)).To(BeFalse())
+		Expect(readyConditionExposesAddress(&metav1.Condition{
+			Type: ConditionTypeReady, Status: metav1.ConditionTrue, Reason: ReasonMCPEndpointUnavailable,
+		})).To(BeFalse())
+		Expect(readyConditionExposesAddress(&metav1.Condition{
+			Type: ConditionTypeReady, Status: metav1.ConditionFalse, Reason: ReasonAvailable,
+		})).To(BeFalse())
+		Expect(readyConditionExposesAddress(&metav1.Condition{
+			Type: ConditionTypeReady, Status: metav1.ConditionTrue, Reason: ReasonAvailable,
+		})).To(BeTrue())
+	})
+
 	It("readyConditionIsAvailable returns true only for Ready=True with reason Available", func() {
 		Expect(readyConditionIsAvailable(nil)).To(BeFalse())
 		Expect(readyConditionIsAvailable([]metav1.Condition{

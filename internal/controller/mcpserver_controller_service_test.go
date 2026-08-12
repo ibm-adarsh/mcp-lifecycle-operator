@@ -62,14 +62,8 @@ var _ = Describe("MCPServer Controller - Address URL", func() {
 			resource.Spec.Runtime.Replicas = new(int32(1))
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 
-			controllerReconciler := &MCPServerReconciler{
-				Client:    k8sClient,
-				Scheme:    k8sClient.Scheme(),
-				APIReader: k8sClient,
-			}
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
+			controllerReconciler := newReconcilerForTest(k8sClient, k8sClient.Scheme())
+			err := reconcileWithAvailableDeployment(ctx, controllerReconciler, typeNamespacedName)
 			Expect(err).NotTo(HaveOccurred())
 
 			mcpServer := &mcpv1alpha1.MCPServer{}
@@ -83,14 +77,8 @@ var _ = Describe("MCPServer Controller - Address URL", func() {
 			resource.Spec.Config.Port = 3001
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 
-			controllerReconciler := &MCPServerReconciler{
-				Client:    k8sClient,
-				Scheme:    k8sClient.Scheme(),
-				APIReader: k8sClient,
-			}
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
+			controllerReconciler := newReconcilerForTest(k8sClient, k8sClient.Scheme())
+			err := reconcileWithAvailableDeployment(ctx, controllerReconciler, typeNamespacedName)
 			Expect(err).NotTo(HaveOccurred())
 
 			mcpServer := &mcpv1alpha1.MCPServer{}
@@ -104,14 +92,8 @@ var _ = Describe("MCPServer Controller - Address URL", func() {
 			resource.Spec.Config.Path = "/sse"
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 
-			controllerReconciler := &MCPServerReconciler{
-				Client:    k8sClient,
-				Scheme:    k8sClient.Scheme(),
-				APIReader: k8sClient,
-			}
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
+			controllerReconciler := newReconcilerForTest(k8sClient, k8sClient.Scheme())
+			err := reconcileWithAvailableDeployment(ctx, controllerReconciler, typeNamespacedName)
 			Expect(err).NotTo(HaveOccurred())
 
 			mcpServer := &mcpv1alpha1.MCPServer{}
@@ -125,18 +107,10 @@ var _ = Describe("MCPServer Controller - Address URL", func() {
 			resource.Spec.Runtime.Replicas = new(int32(1))
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 
-			controllerReconciler := &MCPServerReconciler{
-				Client:    k8sClient,
-				Scheme:    k8sClient.Scheme(),
-				APIReader: k8sClient,
-			}
+			controllerReconciler := newReconcilerForTest(k8sClient, k8sClient.Scheme())
+			Expect(reconcileWithAvailableDeployment(ctx, controllerReconciler, typeNamespacedName)).To(Succeed())
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
-			Expect(err).NotTo(HaveOccurred())
-
-			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -172,14 +146,8 @@ var _ = Describe("MCPServer Controller - Service Update", func() {
 			resource := newTestMCPServer(resourceName)
 			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 
-			controllerReconciler := &MCPServerReconciler{
-				Client:    k8sClient,
-				Scheme:    k8sClient.Scheme(),
-				APIReader: k8sClient,
-			}
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
+			controllerReconciler := newReconcilerForTest(k8sClient, k8sClient.Scheme())
+			err := reconcileWithAvailableDeployment(ctx, controllerReconciler, typeNamespacedName)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Verifying the initial Service port")

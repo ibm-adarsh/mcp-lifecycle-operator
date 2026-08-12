@@ -21,6 +21,7 @@ package controller
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -86,6 +87,21 @@ func drainEvents(ch <-chan string) []string {
 			return drained
 		}
 	}
+}
+
+// reconcileWithAvailableDeployment creates owned resources, marks the Deployment available,
+// and reconciles again so Ready=True and status.address can be published.
+func reconcileWithAvailableDeployment(
+	ctx context.Context,
+	reconciler *MCPServerReconciler,
+	nn types.NamespacedName,
+) error {
+	if _, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn}); err != nil {
+		return err
+	}
+	simulateDeploymentAvailable(ctx, nn)
+	_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+	return err
 }
 
 // newTestMCPServer returns an MCPServer with standard test defaults:
@@ -874,6 +890,59 @@ var _ = Describe("MCPServer Controller", func() {
 			By("Verifying Replicas and ReadyReplicas reflect deployment state")
 			Expect(mcpServer.Status.Replicas).To(Equal(int32(1)))
 			Expect(mcpServer.Status.ReadyReplicas).To(Equal(int32(0)))
+			Expect(mcpServer.Status.Address).To(BeNil())
+		})
+
+		It("should emit a Warning event when Deployment becomes unavailable", func() {
+			reconciler, fr := newReconcilerForTestWithFakeEvents(k8sClient, k8sClient.Scheme())
+
+			By("Initial reconciliation creates deployment")
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			deployment := &appsv1.Deployment{}
+			err = k8sClient.Get(ctx, client.ObjectKey{
+				Name:      resourceName,
+				Namespace: "default",
+			}, deployment)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Simulating deployment being unavailable (progressing but not ready)")
+			deployment.Status.Replicas = 1
+			deployment.Status.ReadyReplicas = 0
+			deployment.Status.Conditions = []appsv1.DeploymentCondition{
+				{
+					Type:   appsv1.DeploymentProgressing,
+					Status: corev1.ConditionTrue,
+					Reason: "NewReplicaSetCreated",
+				},
+			}
+			Expect(k8sClient.Status().Update(ctx, deployment)).To(Succeed())
+
+			By("Reconciling should set Ready=False, clear address, and emit Warning event")
+			_, err = reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			mcpServer := &mcpv1alpha1.MCPServer{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
+			Expect(mcpServer.Status.Address).To(BeNil())
+
+			var deploymentUnavailableEvent string
+			Eventually(func(g Gomega) {
+				for _, ev := range drainEvents(fr.Events) {
+					if strings.Contains(ev, corev1.EventTypeWarning) &&
+						strings.Contains(ev, ReasonDeploymentUnavailable) {
+						deploymentUnavailableEvent = ev
+						break
+					}
+				}
+				g.Expect(deploymentUnavailableEvent).NotTo(BeEmpty())
+				g.Expect(deploymentUnavailableEvent).To(ContainSubstring("Waiting for instances to become healthy"))
+			}).Should(Succeed())
 		})
 
 		It("should NOT requeue when Deployment becomes available", func() {

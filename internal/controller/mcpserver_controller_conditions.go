@@ -282,7 +282,16 @@ func acceptedConditionIsTrue(conditions []metav1.Condition) bool {
 
 func readyConditionIsAvailable(conditions []metav1.Condition) bool {
 	c := meta.FindStatusCondition(conditions, ConditionTypeReady)
-	return c != nil && c.Status == metav1.ConditionTrue && c.Reason == ReasonAvailable
+	return readyConditionExposesAddress(c)
+}
+
+// readyConditionExposesAddress reports whether the MCP server endpoint in status.address
+// should be published to clients (Ready=True with reason Available).
+func readyConditionExposesAddress(condition *metav1.Condition) bool {
+	return condition != nil &&
+		condition.Type == ConditionTypeReady &&
+		condition.Status == metav1.ConditionTrue &&
+		condition.Reason == ReasonAvailable
 }
 
 func duplicateHandshakeUnavailable(conditions []metav1.Condition, message string) bool {
