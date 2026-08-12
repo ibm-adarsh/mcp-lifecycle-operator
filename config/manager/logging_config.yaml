@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: config
+  name: mcp-lifecycle-operator-config
   labels:
     app.kubernetes.io/name: mcp-lifecycle-operator
     app.kubernetes.io/managed-by: kustomize

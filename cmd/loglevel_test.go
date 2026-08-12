@@ -103,6 +103,27 @@ func TestDetectOperatorNamespace(t *testing.T) {
 	}
 }
 
+func TestDetectOperatorNamespace_NoEnvNoFile(t *testing.T) {
+	t.Setenv(podNamespaceEnvVar, "")
+	if got := detectOperatorNamespace(); got != "" {
+		t.Fatalf("detectOperatorNamespace() = %q, want empty string when env and SA file are absent", got)
+	}
+}
+
+func TestSetupLogLevelFromConfigMap_Validation(t *testing.T) {
+	atomicLevel := uzap.NewAtomicLevelAt(uzap.InfoLevel)
+
+	if err := setupLogLevelFromConfigMap(nil, atomicLevel, "system", "", "log-level"); err != nil {
+		t.Fatalf("empty name: unexpected error: %v", err)
+	}
+	if err := setupLogLevelFromConfigMap(nil, atomicLevel, "", "mcp-lifecycle-operator-config", "log-level"); err != nil {
+		t.Fatalf("empty namespace: unexpected error: %v", err)
+	}
+	if err := setupLogLevelFromConfigMap(nil, atomicLevel, "system", "mcp-lifecycle-operator-config", ""); err == nil {
+		t.Fatal("empty key: expected error")
+	}
+}
+
 func reconcileLogLevel(t *testing.T, initialLevel zapcore.Level, configLevel string) uzap.AtomicLevel {
 	t.Helper()
 
@@ -204,5 +225,63 @@ func TestLogLevelReconciler_Idempotent(t *testing.T) {
 
 	if atomicLevel.Level() != uzap.DebugLevel {
 		t.Fatalf("atomic level = %v, want debug", atomicLevel.Level())
+	}
+}
+
+func TestLogLevelReconciler_NotFound(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add corev1 scheme: %v", err)
+	}
+
+	reconciler := &logLevelReconciler{
+		Client:      fake.NewClientBuilder().WithScheme(scheme).Build(),
+		atomicLevel: uzap.NewAtomicLevelAt(uzap.InfoLevel),
+		key:         "log-level",
+	}
+
+	_, err := reconciler.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{
+			Namespace: "system",
+			Name:      "missing-config",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+}
+
+func TestLogLevelReconciler_MissingKey(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add corev1 scheme: %v", err)
+	}
+
+	atomicLevel := uzap.NewAtomicLevelAt(uzap.InfoLevel)
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "mcp-lifecycle-operator-config",
+			Namespace: "system",
+		},
+		Data: map[string]string{},
+	}
+
+	reconciler := &logLevelReconciler{
+		Client:      fake.NewClientBuilder().WithScheme(scheme).WithObjects(cm).Build(),
+		atomicLevel: atomicLevel,
+		key:         "log-level",
+	}
+
+	_, err := reconciler.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{
+			Namespace: "system",
+			Name:      "mcp-lifecycle-operator-config",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if atomicLevel.Level() != uzap.InfoLevel {
+		t.Fatalf("atomic level = %v, want unchanged info", atomicLevel.Level())
 	}
 }
