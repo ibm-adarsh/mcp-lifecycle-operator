@@ -331,11 +331,7 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	recordCondition(mcpServer.Name, mcpServer.Namespace,
 		readyCondition.Type, string(readyCondition.Status), readyCondition.Reason)
 
-	if readyCondition.Status == metav1.ConditionFalse &&
-		readyCondition.Reason == ReasonDeploymentUnavailable &&
-		!duplicateDeploymentUnavailable(mcpServer.Status.Conditions, readyCondition.Message) {
-		r.emitDeploymentReconcileFailed(mcpServer, readyCondition.Message)
-	}
+	r.maybeEmitDeploymentUnavailableEvent(mcpServer, readyCondition)
 
 	// Build status
 	path := mcpServer.Spec.Config.Path
@@ -371,10 +367,7 @@ func (r *MCPServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			conditionToAC(readyCondition),
 		)
 
-	if readyCondition.Status == metav1.ConditionTrue && readyCondition.Reason == ReasonAvailable {
-		status = status.WithAddress(acv1alpha1.MCPServerAddress().
-			WithURL(mcpURL))
-	}
+	status = withAddressWhenAvailable(status, readyCondition, mcpURL)
 
 	r.detectCapabilityChanges(mcpServer, serverInfo)
 
@@ -522,6 +515,28 @@ func (r *MCPServerReconciler) emitServerReady(mcpServer *mcpv1alpha1.MCPServer) 
 		return
 	}
 	r.Recorder.Eventf(mcpServer, nil, corev1.EventTypeNormal, ReasonAvailable, eventActionServerReady, "MCPServer %s is ready; Ready=True", mcpServer.Name)
+}
+
+func (r *MCPServerReconciler) maybeEmitDeploymentUnavailableEvent(
+	mcpServer *mcpv1alpha1.MCPServer,
+	readyCondition metav1.Condition,
+) {
+	if readyCondition.Status == metav1.ConditionFalse &&
+		readyCondition.Reason == ReasonDeploymentUnavailable &&
+		!duplicateDeploymentUnavailable(mcpServer.Status.Conditions, readyCondition.Message) {
+		r.emitDeploymentReconcileFailed(mcpServer, readyCondition.Message)
+	}
+}
+
+func withAddressWhenAvailable(
+	status *acv1alpha1.MCPServerStatusApplyConfiguration,
+	readyCondition metav1.Condition,
+	mcpURL string,
+) *acv1alpha1.MCPServerStatusApplyConfiguration {
+	if readyCondition.Status == metav1.ConditionTrue && readyCondition.Reason == ReasonAvailable {
+		return status.WithAddress(acv1alpha1.MCPServerAddress().WithURL(mcpURL))
+	}
+	return status
 }
 
 func (r *MCPServerReconciler) emitDeploymentReconcileFailed(mcpServer *mcpv1alpha1.MCPServer, message string) {
