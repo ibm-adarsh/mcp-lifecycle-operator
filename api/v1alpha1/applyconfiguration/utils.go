@@ -38,6 +38,12 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apiv1alpha1.HealthConfigApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("MCPConfig"):
 		return &apiv1alpha1.MCPConfigApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("MCPGatewayBinding"):
+		return &apiv1alpha1.MCPGatewayBindingApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("MCPGatewayBindingSpec"):
+		return &apiv1alpha1.MCPGatewayBindingSpecApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("MCPGatewayBindingStatus"):
+		return &apiv1alpha1.MCPGatewayBindingStatusApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("MCPServer"):
 		return &apiv1alpha1.MCPServerApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("MCPServerAddress"):
@@ -50,8 +56,12 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apiv1alpha1.MCPServerSpecApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("MCPServerStatus"):
 		return &apiv1alpha1.MCPServerStatusApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("NetworkConfig"):
+		return &apiv1alpha1.NetworkConfigApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("RuntimeConfig"):
 		return &apiv1alpha1.RuntimeConfigApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("SecretReference"):
+		return &apiv1alpha1.SecretReferenceApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("SecurityConfig"):
 		return &apiv1alpha1.SecurityConfigApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("ServerConfig"):
@@ -62,6 +72,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &apiv1alpha1.StorageMountApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("StorageSource"):
 		return &apiv1alpha1.StorageSourceApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("TLSClientConfig"):
+		return &apiv1alpha1.TLSClientConfigApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("TransportConfig"):
+		return &apiv1alpha1.TransportConfigApplyConfiguration{}
 
 	}
 	return nil

@@ -8,9 +8,12 @@ A Kubernetes operator that provides a declarative API to deploy, manage, and saf
 
 - [Introduction](https://mcp-lifecycle-operator.sigs.k8s.io/introduction/) - Architecture and MCPServer API overview
 - [Quickstart Guide](https://mcp-lifecycle-operator.sigs.k8s.io/guides/quickstart/) - Get up and running quickly
+- [Gateway Integration](https://mcp-lifecycle-operator.sigs.k8s.io/guides/gateway/) - Expose MCP servers through external gateways
 - [Metrics](https://mcp-lifecycle-operator.sigs.k8s.io/operating/metrics/) - Prometheus metrics reference and Grafana dashboard
+- [TLS Configuration](https://mcp-lifecycle-operator.sigs.k8s.io/operating/tls/) - Min version, cipher suites, and TLS 1.3 named groups
+- [Storage Version Migration](https://mcp-lifecycle-operator.sigs.k8s.io/operating/storage-version-migration/) - Rewrite stored objects to v1beta1 before removing v1alpha1
 - [API Reference](https://mcp-lifecycle-operator.sigs.k8s.io/reference/) - Full MCPServer API documentation
-- [Complete MCPServer example](./config/samples/mcp_v1alpha1_mcpserver_complete.yaml) - YAML showing all available fields
+- [Complete MCPServer example](./config/samples/mcp_v1beta1_mcpserver_complete.yaml) - YAML showing all available fields
 - [Contributing](https://mcp-lifecycle-operator.sigs.k8s.io/contributing/) - How to contribute to the project
 
 ## Prerequisites
@@ -76,6 +79,21 @@ spec:
   config:
     port: 8080
 EOF
+```
+
+For an MCP server image in a private registry, create an image pull Secret in
+the same namespace and reference it from the `ContainerImage` source. The
+optional `pullPolicy` field accepts `Always`, `IfNotPresent`, or `Never`.
+
+```yaml
+spec:
+  source:
+    type: ContainerImage
+    containerImage:
+      ref: registry.example.com/team/mcp-server:v1
+      pullPolicy: IfNotPresent
+      imagePullSecrets:
+        - name: registry-credentials
 ```
 
 ### 3. Verify the Deployment
@@ -163,6 +181,7 @@ For more examples, see the [examples/](./examples/) directory:
 
 - **[kubernetes-mcp-server](./examples/kubernetes-mcp-server/)** - Deploy the Kubernetes MCP Server with basic and ConfigMap-based configurations
 - **[everything-mcp-server](./examples/everything-mcp-server/)** - Deploy the Everything MCP Server
+- **[gateway-integration](./examples/gateway-integration/)** - Expose an MCP server through a gateway
 
 ## Development
 

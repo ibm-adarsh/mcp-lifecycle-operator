@@ -21,6 +21,7 @@ package e2e
 import (
 	"context"
 	"testing"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -31,16 +32,21 @@ import (
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/features"
 
-	mcpv1alpha1 "github.com/kubernetes-sigs/mcp-lifecycle-operator/api/v1alpha1"
+	mcpv1beta1 "github.com/kubernetes-sigs/mcp-lifecycle-operator/api/v1beta1"
 	f "github.com/kubernetes-sigs/mcp-lifecycle-operator/test/e2e/framework"
+	"github.com/kubernetes-sigs/mcp-lifecycle-operator/test/e2e/framework/labels/category"
+	"github.com/kubernetes-sigs/mcp-lifecycle-operator/test/e2e/framework/labels/scenario"
+	"github.com/kubernetes-sigs/mcp-lifecycle-operator/test/e2e/framework/labels/speed"
 )
 
 // --- Storage Tests ---
 
 func TestStorageConfigMap(t *testing.T) {
+	t.Parallel()
 	feature := features.New("MCPServer with ConfigMap storage").
-		WithLabel("type", "configuration").
-		WithLabel("config", "storage-configmap").
+		WithLabel(category.Label, category.Configuration).
+		WithLabel(speed.Label, speed.Fast).
+		WithLabel(scenario.Label, scenario.Storage).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			ns := ctx.Value(f.NsKey).(string)
 			r := cfg.Client().Resources()
@@ -54,11 +60,11 @@ func TestStorageConfigMap(t *testing.T) {
 			}
 
 			return f.SetupMCPServer(ctx, t, cfg, "storage-cm", true,
-				f.WithStorage(mcpv1alpha1.StorageMount{
+				f.WithStorage(mcpv1beta1.StorageMount{
 					Path:        "/etc/mcp-config",
-					Permissions: mcpv1alpha1.MountPermissionsReadOnly,
-					Source: mcpv1alpha1.StorageSource{
-						Type: mcpv1alpha1.StorageTypeConfigMap,
+					Permissions: mcpv1beta1.MountPermissionsReadOnly,
+					Source: mcpv1beta1.StorageSource{
+						Type: mcpv1beta1.StorageTypeConfigMap,
 						ConfigMap: &corev1.ConfigMapVolumeSource{
 							LocalObjectReference: corev1.LocalObjectReference{Name: "test-config"},
 						},
@@ -109,9 +115,11 @@ func TestStorageConfigMap(t *testing.T) {
 }
 
 func TestStorageSecret(t *testing.T) {
+	t.Parallel()
 	feature := features.New("MCPServer with Secret storage").
-		WithLabel("type", "configuration").
-		WithLabel("config", "storage-secret").
+		WithLabel(category.Label, category.Configuration).
+		WithLabel(speed.Label, speed.Fast).
+		WithLabel(scenario.Label, scenario.Storage).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			ns := ctx.Value(f.NsKey).(string)
 			r := cfg.Client().Resources()
@@ -125,11 +133,11 @@ func TestStorageSecret(t *testing.T) {
 			}
 
 			return f.SetupMCPServer(ctx, t, cfg, "storage-secret", true,
-				f.WithStorage(mcpv1alpha1.StorageMount{
+				f.WithStorage(mcpv1beta1.StorageMount{
 					Path:        "/etc/mcp-secrets",
-					Permissions: mcpv1alpha1.MountPermissionsReadOnly,
-					Source: mcpv1alpha1.StorageSource{
-						Type: mcpv1alpha1.StorageTypeSecret,
+					Permissions: mcpv1beta1.MountPermissionsReadOnly,
+					Source: mcpv1beta1.StorageSource{
+						Type: mcpv1beta1.StorageTypeSecret,
 						Secret: &corev1.SecretVolumeSource{
 							SecretName: "test-secret",
 						},
@@ -180,17 +188,19 @@ func TestStorageSecret(t *testing.T) {
 }
 
 func TestStorageEmptyDir(t *testing.T) {
+	t.Parallel()
 	feature := features.New("MCPServer with EmptyDir storage").
-		WithLabel("type", "configuration").
-		WithLabel("config", "storage-emptydir").
+		WithLabel(category.Label, category.Configuration).
+		WithLabel(speed.Label, speed.Fast).
+		WithLabel(scenario.Label, scenario.Storage).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			sizeLimit := resource.MustParse("100Mi")
 			return f.SetupMCPServer(ctx, t, cfg, "storage-empty", true,
-				f.WithStorage(mcpv1alpha1.StorageMount{
+				f.WithStorage(mcpv1beta1.StorageMount{
 					Path:        "/tmp/scratch",
-					Permissions: mcpv1alpha1.MountPermissionsReadWrite,
-					Source: mcpv1alpha1.StorageSource{
-						Type: mcpv1alpha1.StorageTypeEmptyDir,
+					Permissions: mcpv1beta1.MountPermissionsReadWrite,
+					Source: mcpv1beta1.StorageSource{
+						Type: mcpv1beta1.StorageTypeEmptyDir,
 						EmptyDir: &corev1.EmptyDirVolumeSource{
 							SizeLimit: &sizeLimit,
 						},
@@ -241,9 +251,11 @@ func TestStorageEmptyDir(t *testing.T) {
 }
 
 func TestStorageRecursiveReadOnly(t *testing.T) {
+	t.Parallel()
 	feature := features.New("MCPServer with RecursiveReadOnly storage").
-		WithLabel("type", "configuration").
-		WithLabel("config", "storage-recursive-readonly").
+		WithLabel(category.Label, category.Configuration).
+		WithLabel(speed.Label, speed.Fast).
+		WithLabel(scenario.Label, scenario.Storage).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			ns := ctx.Value(f.NsKey).(string)
 			r := cfg.Client().Resources()
@@ -257,11 +269,11 @@ func TestStorageRecursiveReadOnly(t *testing.T) {
 			}
 
 			return f.SetupMCPServer(ctx, t, cfg, "storage-rro", true,
-				f.WithStorage(mcpv1alpha1.StorageMount{
+				f.WithStorage(mcpv1beta1.StorageMount{
 					Path:        "/etc/rro-config",
-					Permissions: mcpv1alpha1.MountPermissionsRecursiveReadOnly,
-					Source: mcpv1alpha1.StorageSource{
-						Type: mcpv1alpha1.StorageTypeConfigMap,
+					Permissions: mcpv1beta1.MountPermissionsRecursiveReadOnly,
+					Source: mcpv1beta1.StorageSource{
+						Type: mcpv1beta1.StorageTypeConfigMap,
 						ConfigMap: &corev1.ConfigMapVolumeSource{
 							LocalObjectReference: corev1.LocalObjectReference{Name: "rro-config"},
 						},
@@ -307,9 +319,11 @@ func TestStorageRecursiveReadOnly(t *testing.T) {
 }
 
 func TestStorageMultipleMounts(t *testing.T) {
+	t.Parallel()
 	feature := features.New("MCPServer with multiple storage mounts").
-		WithLabel("type", "configuration").
-		WithLabel("config", "storage-multi").
+		WithLabel(category.Label, category.Configuration).
+		WithLabel(speed.Label, speed.Fast).
+		WithLabel(scenario.Label, scenario.Storage).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			ns := ctx.Value(f.NsKey).(string)
 			r := cfg.Client().Resources()
@@ -333,31 +347,31 @@ func TestStorageMultipleMounts(t *testing.T) {
 			sizeLimit := resource.MustParse("50Mi")
 			return f.SetupMCPServer(ctx, t, cfg, "storage-multi", true,
 				f.WithStorage(
-					mcpv1alpha1.StorageMount{
+					mcpv1beta1.StorageMount{
 						Path:        "/etc/config",
-						Permissions: mcpv1alpha1.MountPermissionsReadOnly,
-						Source: mcpv1alpha1.StorageSource{
-							Type: mcpv1alpha1.StorageTypeConfigMap,
+						Permissions: mcpv1beta1.MountPermissionsReadOnly,
+						Source: mcpv1beta1.StorageSource{
+							Type: mcpv1beta1.StorageTypeConfigMap,
 							ConfigMap: &corev1.ConfigMapVolumeSource{
 								LocalObjectReference: corev1.LocalObjectReference{Name: "multi-cm"},
 							},
 						},
 					},
-					mcpv1alpha1.StorageMount{
+					mcpv1beta1.StorageMount{
 						Path:        "/etc/secrets",
-						Permissions: mcpv1alpha1.MountPermissionsReadOnly,
-						Source: mcpv1alpha1.StorageSource{
-							Type: mcpv1alpha1.StorageTypeSecret,
+						Permissions: mcpv1beta1.MountPermissionsReadOnly,
+						Source: mcpv1beta1.StorageSource{
+							Type: mcpv1beta1.StorageTypeSecret,
 							Secret: &corev1.SecretVolumeSource{
 								SecretName: "multi-secret",
 							},
 						},
 					},
-					mcpv1alpha1.StorageMount{
+					mcpv1beta1.StorageMount{
 						Path:        "/tmp/data",
-						Permissions: mcpv1alpha1.MountPermissionsReadWrite,
-						Source: mcpv1alpha1.StorageSource{
-							Type:     mcpv1alpha1.StorageTypeEmptyDir,
+						Permissions: mcpv1beta1.MountPermissionsReadWrite,
+						Source: mcpv1beta1.StorageSource{
+							Type:     mcpv1beta1.StorageTypeEmptyDir,
 							EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: &sizeLimit},
 						},
 					},
@@ -409,12 +423,14 @@ func TestStorageMultipleMounts(t *testing.T) {
 // --- Port Configuration Tests ---
 
 func TestCustomPort(t *testing.T) {
+	t.Parallel()
 	feature := features.New("MCPServer with custom non-default port").
-		WithLabel("type", "configuration").
-		WithLabel("config", "port-custom").
+		WithLabel(category.Label, category.Configuration).
+		WithLabel(speed.Label, speed.Fast).
+		WithLabel(scenario.Label, scenario.Port).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
-			// Use port 9090 at creation time. The test image only listens on 3001,
-			// so the pod won't pass readiness, but we verify port propagation.
+			// Use port 9090 at creation time. The default args tell the image to
+			// listen on 8080, so the pod won't pass readiness; we verify port propagation.
 			return f.SetupMCPServer(ctx, t, cfg, "custom-port", false,
 				f.WithPort(9090),
 			)
@@ -458,16 +474,19 @@ func TestCustomPort(t *testing.T) {
 			t.Log("Service has port 9090")
 			return ctx
 		}).
-		Assess("status address URL contains port 9090", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+		Assess("status address is unset when not Available", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			server := f.ServerFromContext(ctx)
 			r := cfg.Client().Resources()
+
+			f.WaitForMCPServerCondition(ctx, t, r, server,
+				"Available", metav1.ConditionFalse, 3*time.Minute)
 
 			if err := r.Get(ctx, server.Name, server.Namespace, server); err != nil {
 				t.Fatalf("failed to get MCPServer: %v", err)
 			}
 
-			f.AssertAddressURL(t, server, 9090)
-			t.Logf("status address URL: %s", server.Status.Address.URL)
+			f.AssertAddressUnset(t, server)
+			t.Log("status.address.url is unset while Available=False")
 			return ctx
 		}).
 		Teardown(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
@@ -479,9 +498,11 @@ func TestCustomPort(t *testing.T) {
 }
 
 func TestSamePortDifferentNamespaces(t *testing.T) {
+	t.Parallel()
 	feature := features.New("MCPServers with same port in different namespaces").
-		WithLabel("type", "configuration").
-		WithLabel("config", "port-namespaces").
+		WithLabel(category.Label, category.Configuration).
+		WithLabel(speed.Label, speed.Slow).
+		WithLabel(scenario.Label, scenario.Port).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			// Server A in the default test namespace
 			ctx = f.SetupMCPServer(ctx, t, cfg, "server-a", true)
@@ -503,23 +524,23 @@ func TestSamePortDifferentNamespaces(t *testing.T) {
 			ctx = context.WithValue(ctx, f.ContextKey("serverB"), serverB)
 
 			r := cfg.Client().Resources()
-			f.WaitForMCPServerCondition(ctx, t, r, serverB, "Ready", metav1.ConditionTrue)
-			t.Log("both MCPServers are Ready")
+			f.WaitForMCPServerCondition(ctx, t, r, serverB, "Available", metav1.ConditionTrue)
+			t.Log("both MCPServers are Available")
 
 			return ctx
 		}).
 		Assess("both servers have independent Deployments and Services", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			serverA := f.ServerFromContext(ctx)
-			serverB := ctx.Value(f.ContextKey("serverB")).(*mcpv1alpha1.MCPServer)
+			serverB := ctx.Value(f.ContextKey("serverB")).(*mcpv1beta1.MCPServer)
 			r := cfg.Client().Resources()
 
-			for _, server := range []*mcpv1alpha1.MCPServer{serverA, serverB} {
+			for _, server := range []*mcpv1beta1.MCPServer{serverA, serverB} {
 				dep := &appsv1.Deployment{}
 				if err := r.Get(ctx, server.Name, server.Namespace, dep); err != nil {
 					t.Fatalf("Deployment not found for %s/%s: %v", server.Namespace, server.Name, err)
 				}
-				if dep.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort != 3001 {
-					t.Fatalf("expected container port 3001 for %s, got %d",
+				if dep.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort != 8080 {
+					t.Fatalf("expected container port 8080 for %s, got %d",
 						server.Name, dep.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort)
 				}
 
@@ -527,18 +548,18 @@ func TestSamePortDifferentNamespaces(t *testing.T) {
 				if err := r.Get(ctx, server.Name, server.Namespace, svc); err != nil {
 					t.Fatalf("Service not found for %s/%s: %v", server.Namespace, server.Name, err)
 				}
-				if svc.Spec.Ports[0].Port != 3001 {
-					t.Fatalf("expected Service port 3001 for %s, got %d",
+				if svc.Spec.Ports[0].Port != 8080 {
+					t.Fatalf("expected Service port 8080 for %s, got %d",
 						server.Name, svc.Spec.Ports[0].Port)
 				}
 			}
 
-			t.Log("both servers have independent Deployments and Services with port 3001")
+			t.Log("both servers have independent Deployments and Services with port 8080")
 			return ctx
 		}).
 		Teardown(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			// Clean up server B and its namespace
-			serverB := ctx.Value(f.ContextKey("serverB")).(*mcpv1alpha1.MCPServer)
+			serverB := ctx.Value(f.ContextKey("serverB")).(*mcpv1beta1.MCPServer)
 			r := cfg.Client().Resources()
 			if err := r.Delete(ctx, serverB); err != nil {
 				t.Logf("failed to delete server B: %v", err)
@@ -561,9 +582,11 @@ func TestSamePortDifferentNamespaces(t *testing.T) {
 // --- Security Context Tests ---
 
 func TestDefaultSecurityContext(t *testing.T) {
+	t.Parallel()
 	feature := features.New("MCPServer with default security context").
-		WithLabel("type", "configuration").
-		WithLabel("config", "security-default").
+		WithLabel(category.Label, category.Configuration).
+		WithLabel(speed.Label, speed.Moderate).
+		WithLabel(scenario.Label, scenario.Security).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			return f.SetupMCPServer(ctx, t, cfg, "sec-default", true)
 		}).
@@ -609,9 +632,11 @@ func TestDefaultSecurityContext(t *testing.T) {
 }
 
 func TestCustomSecurityContext(t *testing.T) {
+	t.Parallel()
 	feature := features.New("MCPServer with custom security context").
-		WithLabel("type", "configuration").
-		WithLabel("config", "security-custom").
+		WithLabel(category.Label, category.Configuration).
+		WithLabel(speed.Label, speed.Fast).
+		WithLabel(scenario.Label, scenario.Security).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			return f.SetupMCPServer(ctx, t, cfg, "sec-custom", true,
 				f.WithSecurityContext(&corev1.SecurityContext{
@@ -665,9 +690,11 @@ func TestCustomSecurityContext(t *testing.T) {
 }
 
 func TestPodSecurityContext(t *testing.T) {
+	t.Parallel()
 	feature := features.New("MCPServer with pod security context").
-		WithLabel("type", "configuration").
-		WithLabel("config", "security-pod").
+		WithLabel(category.Label, category.Configuration).
+		WithLabel(speed.Label, speed.Fast).
+		WithLabel(scenario.Label, scenario.Security).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			return f.SetupMCPServer(ctx, t, cfg, "sec-pod", true,
 				f.WithPodSecurityContext(&corev1.PodSecurityContext{
@@ -707,9 +734,11 @@ func TestPodSecurityContext(t *testing.T) {
 // --- Custom Metadata Tests ---
 
 func TestCustomLabelsAndAnnotations(t *testing.T) {
+	t.Parallel()
 	feature := features.New("MCPServer with custom labels and annotations").
-		WithLabel("type", "configuration").
-		WithLabel("config", "metadata-custom").
+		WithLabel(category.Label, category.Configuration).
+		WithLabel(speed.Label, speed.Fast).
+		WithLabel(scenario.Label, scenario.Metadata).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			return f.SetupMCPServer(ctx, t, cfg, "meta-custom", true,
 				f.WithExtraLabels(map[string]string{"team": "platform", "env": "test"}),
@@ -781,9 +810,11 @@ func TestCustomLabelsAndAnnotations(t *testing.T) {
 }
 
 func TestReservedLabelFiltering(t *testing.T) {
+	t.Parallel()
 	feature := features.New("MCPServer reserved label filtering").
-		WithLabel("type", "configuration").
-		WithLabel("config", "metadata-reserved").
+		WithLabel(category.Label, category.Configuration).
+		WithLabel(speed.Label, speed.Fast).
+		WithLabel(scenario.Label, scenario.Metadata).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			return f.SetupMCPServer(ctx, t, cfg, "meta-reserved", true,
 				f.WithExtraLabels(map[string]string{
@@ -824,9 +855,11 @@ func TestReservedLabelFiltering(t *testing.T) {
 }
 
 func TestCustomMetadataUpdate(t *testing.T) {
+	t.Parallel()
 	feature := features.New("MCPServer custom metadata update").
-		WithLabel("type", "configuration").
-		WithLabel("config", "metadata-update").
+		WithLabel(category.Label, category.Configuration).
+		WithLabel(speed.Label, speed.Moderate).
+		WithLabel(scenario.Label, scenario.Metadata).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			return f.SetupMCPServer(ctx, t, cfg, "meta-update", true,
 				f.WithExtraLabels(map[string]string{"team": "alpha"}),
@@ -853,7 +886,7 @@ func TestCustomMetadataUpdate(t *testing.T) {
 			server := f.ServerFromContext(ctx)
 			r := cfg.Client().Resources()
 
-			f.UpdateWithRetry(ctx, t, r, server, func(s *mcpv1alpha1.MCPServer) {
+			f.UpdateWithRetry(ctx, t, r, server, func(s *mcpv1beta1.MCPServer) {
 				s.Spec.ExtraLabels = map[string]string{"team": "beta", "tier": "backend"}
 			})
 			t.Log("updated MCPServer labels to {team:beta, tier:backend}")

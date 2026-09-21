@@ -32,7 +32,7 @@ var (
 			Name:      "condition_info",
 			Help:      "Current condition state of MCPServer resources. Value is always 1; use labels to filter.",
 		},
-		[]string{"name", "namespace", "type", "status", "reason"},
+		[]string{keyName, keyNamespace, keyType, keyStatus, keyReason},
 	)
 
 	// validationFailuresTotal counts configuration validation failures.
@@ -43,7 +43,7 @@ var (
 			Name:      "validation_failures_total",
 			Help:      "Total number of configuration validation failures.",
 		},
-		[]string{"name", "namespace", "reason"},
+		[]string{keyName, keyNamespace, keyReason},
 	)
 
 	// deploymentFailuresTotal counts deployment reconciliation failures.
@@ -54,7 +54,7 @@ var (
 			Name:      "deployment_failures_total",
 			Help:      "Total number of deployment reconciliation failures.",
 		},
-		[]string{"name", "namespace", "reason"},
+		[]string{keyName, keyNamespace, keyReason},
 	)
 
 	// serviceFailuresTotal counts service reconciliation failures.
@@ -65,7 +65,7 @@ var (
 			Name:      "service_failures_total",
 			Help:      "Total number of service reconciliation failures.",
 		},
-		[]string{"name", "namespace", "reason"},
+		[]string{keyName, keyNamespace, keyReason},
 	)
 
 	// networkPolicyFailuresTotal counts network policy reconciliation failures.
@@ -75,6 +75,17 @@ var (
 			Namespace: metricsNamespace,
 			Name:      "networkpolicy_failures_total",
 			Help:      "Total number of network policy reconciliation failures.",
+		},
+		[]string{keyName, keyNamespace, keyReason},
+	)
+
+	// gatewayBindingFailuresTotal counts gateway binding reconciliation failures.
+	// Labels: name, namespace, reason.
+	gatewayBindingFailuresTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricsNamespace,
+			Name:      "gateway_binding_failures_total",
+			Help:      "Total number of gateway binding reconciliation failures.",
 		},
 		[]string{"name", "namespace", "reason"},
 	)
@@ -88,7 +99,37 @@ var (
 			Help:      "Duration of reconciliation phases in seconds.",
 			Buckets:   prometheus.DefBuckets,
 		},
-		[]string{"phase"},
+		[]string{keyPhase},
+	)
+
+	handshakeTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricsNamespace,
+			Name:      "handshake_total",
+			Help:      "Total number of MCP handshake outcomes.",
+		},
+		[]string{keyName, keyNamespace, "result"},
+	)
+
+	handshakeDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: metricsNamespace,
+			Name:      "handshake_duration_seconds",
+			Help:      "Duration of MCP handshake operations in seconds.",
+			Buckets:   []float64{0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+		},
+		[]string{keyName, keyNamespace},
+	)
+
+	// capabilityChangesTotal counts MCP server capability changes detected between generations.
+	// Labels: name, namespace.
+	capabilityChangesTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricsNamespace,
+			Name:      "capability_changes_total",
+			Help:      "Total number of MCP server capability changes detected.",
+		},
+		[]string{keyName, keyNamespace},
 	)
 )
 
@@ -99,7 +140,11 @@ func init() {
 		deploymentFailuresTotal,
 		serviceFailuresTotal,
 		networkPolicyFailuresTotal,
+		gatewayBindingFailuresTotal,
 		reconcileDuration,
+		handshakeTotal,
+		handshakeDuration,
+		capabilityChangesTotal,
 	)
 }
 
@@ -108,28 +153,32 @@ func init() {
 func recordCondition(name, namespace, condType, status, reason string) {
 	// Delete all status/reason variants for this condition type to ensure only one is active
 	conditionInfo.DeletePartialMatch(prometheus.Labels{
-		"name":      name,
-		"namespace": namespace,
-		"type":      condType,
+		keyName:      name,
+		keyNamespace: namespace,
+		keyType:      condType,
 	})
 	conditionInfo.With(prometheus.Labels{
-		"name":      name,
-		"namespace": namespace,
-		"type":      condType,
-		"status":    status,
-		"reason":    reason,
+		keyName:      name,
+		keyNamespace: namespace,
+		keyType:      condType,
+		keyStatus:    status,
+		keyReason:    reason,
 	}).Set(1)
 }
 
 // cleanupMetrics removes all metrics for a deleted MCPServer.
 func cleanupMetrics(name, namespace string) {
 	labels := prometheus.Labels{
-		"name":      name,
-		"namespace": namespace,
+		keyName:      name,
+		keyNamespace: namespace,
 	}
 	conditionInfo.DeletePartialMatch(labels)
 	validationFailuresTotal.DeletePartialMatch(labels)
 	deploymentFailuresTotal.DeletePartialMatch(labels)
 	serviceFailuresTotal.DeletePartialMatch(labels)
 	networkPolicyFailuresTotal.DeletePartialMatch(labels)
+	handshakeTotal.DeletePartialMatch(labels)
+	handshakeDuration.DeletePartialMatch(labels)
+	capabilityChangesTotal.DeletePartialMatch(labels)
+	gatewayBindingFailuresTotal.DeletePartialMatch(labels)
 }

@@ -38,6 +38,7 @@ var knownMetrics = []string{
 	"mcpserver_deployment_failures_total",
 	"mcpserver_service_failures_total",
 	"mcpserver_networkpolicy_failures_total",
+	"mcpserver_gateway_binding_failures_total",
 	"mcpserver_reconcile_phase_duration_seconds",
 	"mcpserver_reconcile_phase_duration_seconds_bucket",
 	"controller_runtime_reconcile_total",
@@ -81,6 +82,49 @@ func TestDashboardJSONIsValid(t *testing.T) {
 	}
 }
 
+func TestDashboardTemplateVariables(t *testing.T) {
+	path := filepath.Join(".", dashboardFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read dashboard: %v", err)
+	}
+
+	var root map[string]any
+	if err := json.Unmarshal(data, &root); err != nil {
+		t.Fatalf("dashboard is not valid JSON: %v", err)
+	}
+
+	templating, ok := root["templating"].(map[string]any)
+	if !ok {
+		t.Fatal("dashboard missing templating")
+	}
+	list, ok := templating["list"].([]any)
+	if !ok {
+		t.Fatal("templating.list missing")
+	}
+
+	required := map[string]bool{
+		"datasource":          false,
+		"mcpserver_namespace": false,
+		"operator_namespace":  false,
+	}
+	for _, item := range list {
+		v, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := v["name"].(string)
+		if _, want := required[name]; want {
+			required[name] = true
+		}
+	}
+	for name, found := range required {
+		if !found {
+			t.Errorf("dashboard missing required template variable %q", name)
+		}
+	}
+}
+
 func TestDashboardQueriesReferenceKnownMetrics(t *testing.T) {
 	path := filepath.Join(".", dashboardFile)
 	data, err := os.ReadFile(path)
@@ -94,20 +138,33 @@ func TestDashboardQueriesReferenceKnownMetrics(t *testing.T) {
 		t.Fatal("no PromQL expressions found in dashboard")
 	}
 
+	seen := map[string]struct{}{}
+	for _, expr := range exprs {
+		names, err := metricSelectorsFromExpr(expr)
+		if err != nil {
+			t.Fatalf("parse expr %q: %v", expr, err)
+		}
+		for _, name := range names {
+			seen[name] = struct{}{}
+		}
+	}
+
+	// Required metrics must appear as actual PromQL selectors (not only in titles/legends).
 	required := []string{
 		"mcpserver_condition_info",
 		"mcpserver_validation_failures_total",
 		"mcpserver_deployment_failures_total",
 		"mcpserver_service_failures_total",
 		"mcpserver_networkpolicy_failures_total",
-		"mcpserver_reconcile_phase_duration_seconds",
+		"mcpserver_gateway_binding_failures_total",
+		"mcpserver_reconcile_phase_duration_seconds_bucket",
 		"controller_runtime_reconcile_total",
 		"controller_runtime_reconcile_errors_total",
-		"controller_runtime_reconcile_time_seconds",
+		"controller_runtime_reconcile_time_seconds_bucket",
 	}
 	for _, metric := range required {
-		if !strings.Contains(content, metric) {
-			t.Errorf("dashboard missing required metric reference %q", metric)
+		if _, ok := seen[metric]; !ok {
+			t.Errorf("dashboard missing required metric selector %q", metric)
 		}
 	}
 
@@ -119,17 +176,6 @@ func TestDashboardQueriesReferenceKnownMetrics(t *testing.T) {
 	for _, metric := range unimplemented {
 		if strings.Contains(content, metric) {
 			t.Errorf("dashboard references unimplemented metric %q", metric)
-		}
-	}
-
-	seen := map[string]struct{}{}
-	for _, expr := range exprs {
-		names, err := metricSelectorsFromExpr(expr)
-		if err != nil {
-			t.Fatalf("parse expr %q: %v", expr, err)
-		}
-		for _, name := range names {
-			seen[name] = struct{}{}
 		}
 	}
 
@@ -145,8 +191,6 @@ func TestDashboardQueriesReferenceKnownMetrics(t *testing.T) {
 }
 
 func TestDashboardKustomizationBuilds(t *testing.T) {
-	t.Helper()
-
 	kustomize := filepath.Join("..", "..", "bin", "kustomize")
 	if _, err := os.Stat(kustomize); err != nil {
 		t.Fatalf("kustomize binary missing at %s: %v", kustomize, err)
@@ -200,8 +244,10 @@ func TestDashboardKustomizationBuilds(t *testing.T) {
 	}
 }
 
+var promQLParser = parser.NewParser(parser.Options{})
+
 func metricSelectorsFromExpr(expr string) ([]string, error) {
-	parsed, err := parser.ParseExpr(expr)
+	parsed, err := promQLParser.ParseExpr(expr)
 	if err != nil {
 		return nil, err
 	}

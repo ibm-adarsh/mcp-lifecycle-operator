@@ -38,7 +38,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	mcpv1alpha1 "github.com/kubernetes-sigs/mcp-lifecycle-operator/api/v1alpha1"
+	mcpv1beta1 "github.com/kubernetes-sigs/mcp-lifecycle-operator/api/v1beta1"
 )
 
 var _ = Describe("MCPServer Controller - reconcileDeployment", func() {
@@ -57,14 +57,14 @@ var _ = Describe("MCPServer Controller - reconcileDeployment", func() {
 	})
 
 	AfterEach(func() {
-		resource := &mcpv1alpha1.MCPServer{}
+		resource := &mcpv1beta1.MCPServer{}
 		err := k8sClient.Get(ctx, typeNamespacedName, resource)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 	})
 
 	It("should create a deployment when none exists", func() {
-		mcpServer := &mcpv1alpha1.MCPServer{}
+		mcpServer := &mcpv1beta1.MCPServer{}
 		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
 
 		reconciler := &MCPServerReconciler{
@@ -79,8 +79,107 @@ var _ = Describe("MCPServer Controller - reconcileDeployment", func() {
 		Expect(deployment.Name).To(Equal(resourceName))
 	})
 
+	It("should persist image pull settings through reconciliation", func() {
+		mcpServer := &mcpv1beta1.MCPServer{}
+		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
+		mcpServer.Spec.Source.ContainerImage.Ref = "docker.io/library/test-image:v1"
+		Expect(k8sClient.Update(ctx, mcpServer)).To(Succeed())
+
+		reconciler := newReconcilerForTest(k8sClient, k8sClient.Scheme())
+		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("updating image pull settings on the MCPServer")
+		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
+		mcpServer.Spec.Source.ContainerImage.PullPolicy = corev1.PullAlways
+		mcpServer.Spec.Source.ContainerImage.ImagePullSecrets = []corev1.LocalObjectReference{
+			{Name: "registry-credentials"},
+		}
+		Expect(k8sClient.Update(ctx, mcpServer)).To(Succeed())
+
+		By("reconciling the updated MCPServer")
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+		Expect(err).NotTo(HaveOccurred())
+
+		deployment := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, client.ObjectKey{
+			Name: resourceName, Namespace: "default",
+		}, deployment)).To(Succeed())
+		Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(1))
+		Expect(deployment.Spec.Template.Spec.Containers[0].ImagePullPolicy).To(Equal(corev1.PullAlways))
+		Expect(deployment.Spec.Template.Spec.ImagePullSecrets).To(Equal([]corev1.LocalObjectReference{
+			{Name: "registry-credentials"},
+		}))
+	})
+
+	It("should propagate image pull policy and image pull secrets", func() {
+		mcpServer := newTestMCPServer("test-image-pull-settings")
+		mcpServer.Spec.Source.ContainerImage.PullPolicy = corev1.PullIfNotPresent
+		mcpServer.Spec.Source.ContainerImage.ImagePullSecrets = []corev1.LocalObjectReference{
+			{Name: "registry-credentials"},
+		}
+
+		reconciler := &MCPServerReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			APIReader: k8sClient,
+		}
+
+		deployment, err := reconciler.createDeployment(mcpServer)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(deployment.Spec.Template.Spec.Containers[0].ImagePullPolicy).To(Equal(corev1.PullIfNotPresent))
+		Expect(deployment.Spec.Template.Spec.ImagePullSecrets).To(Equal([]corev1.LocalObjectReference{
+			{Name: "registry-credentials"},
+		}))
+	})
+
+	It("should preserve Kubernetes defaults when image pull settings are omitted", func() {
+		mcpServer := newTestMCPServer("test-image-pull-defaults")
+		reconciler := &MCPServerReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			APIReader: k8sClient,
+		}
+
+		deployment, err := reconciler.createDeployment(mcpServer)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(deployment.Spec.Template.Spec.Containers[0].ImagePullPolicy).To(BeEmpty())
+		Expect(deployment.Spec.Template.Spec.ImagePullSecrets).To(BeEmpty())
+	})
+
+	It("should detect image pull policy and image pull secret changes and removals", func() {
+		mcpServer := newTestMCPServer("test-image-pull-drift")
+		mcpServer.Spec.Source.ContainerImage.Ref = "docker.io/library/test-image:v1"
+		mcpServer.Spec.Source.ContainerImage.PullPolicy = corev1.PullAlways
+		mcpServer.Spec.Source.ContainerImage.ImagePullSecrets = []corev1.LocalObjectReference{
+			{Name: "registry-credentials"},
+		}
+
+		reconciler := &MCPServerReconciler{
+			Client:    k8sClient,
+			Scheme:    k8sClient.Scheme(),
+			APIReader: k8sClient,
+		}
+		existing, err := reconciler.createDeployment(mcpServer)
+		Expect(err).NotTo(HaveOccurred())
+
+		mcpServer.Spec.Source.ContainerImage.PullPolicy = corev1.PullIfNotPresent
+		mcpServer.Spec.Source.ContainerImage.ImagePullSecrets = []corev1.LocalObjectReference{
+			{Name: "new-registry-credentials"},
+		}
+		desired, err := reconciler.createDeployment(mcpServer)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(deploymentNeedsUpdate(mcpServer, existing, desired, false)).To(BeTrue())
+
+		mcpServer.Spec.Source.ContainerImage.PullPolicy = ""
+		mcpServer.Spec.Source.ContainerImage.ImagePullSecrets = nil
+		desired, err = reconciler.createDeployment(mcpServer)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(deploymentNeedsUpdate(mcpServer, existing, desired, false)).To(BeTrue())
+	})
+
 	It("should return existing deployment without error on second call", func() {
-		mcpServer := &mcpv1alpha1.MCPServer{}
+		mcpServer := &mcpv1beta1.MCPServer{}
 		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
 
 		reconciler := &MCPServerReconciler{
@@ -220,7 +319,7 @@ var _ = Describe("MCPServer Controller - reconcileDeployment", func() {
 				Namespace: "default",
 				OwnerReferences: []metav1.OwnerReference{
 					{
-						APIVersion: "mcp.x-k8s.io/v1alpha1",
+						APIVersion: "mcp.x-k8s.io/v1beta1",
 						Kind:       "MCPServer",
 						Name:       "test-empty-containers",
 						UID:        "fake-uid",
@@ -263,6 +362,50 @@ var _ = Describe("MCPServer Controller - reconcileDeployment", func() {
 	})
 })
 
+var _ = Describe("Kubernetes image pull policy defaulting", func() {
+	It("should match Kubernetes defaults for supported image references", func() {
+		testCases := []struct {
+			image  string
+			policy corev1.PullPolicy
+		}{
+			{image: "docker.io/library/test-image:latest", policy: corev1.PullAlways},
+			{image: "docker.io/library/test-image", policy: corev1.PullAlways},
+			{image: "registry.example.com/team/test-image:v1", policy: corev1.PullIfNotPresent},
+			{image: "registry.example.com/team/test-image@sha256:0123456789abcdef", policy: corev1.PullIfNotPresent},
+			{image: "registry.example.com:5000/team/test-image", policy: corev1.PullAlways},
+			{image: "registry.example.com:5000/team/test-image:v1", policy: corev1.PullIfNotPresent},
+		}
+
+		for _, testCase := range testCases {
+			By("checking " + testCase.image)
+			Expect(defaultImagePullPolicy(testCase.image)).To(Equal(testCase.policy))
+		}
+	})
+
+	It("should not report drift for omitted policies that match Kubernetes defaults", func() {
+		existing := corev1.Container{
+			Image:           "registry.example.com/team/test-image:v1",
+			ImagePullPolicy: corev1.PullIfNotPresent,
+		}
+		desired := corev1.Container{Image: existing.Image}
+		Expect(imagePullPolicyNeedsUpdate(existing, desired)).To(BeFalse())
+
+		existing.ImagePullPolicy = ""
+		Expect(imagePullPolicyNeedsUpdate(existing, desired)).To(BeFalse())
+
+		existing.ImagePullPolicy = corev1.PullAlways
+		desired.ImagePullPolicy = corev1.PullAlways
+		Expect(imagePullPolicyNeedsUpdate(existing, desired)).To(BeFalse())
+	})
+
+	It("should compare image pull Secret references without nil-empty drift", func() {
+		secret := corev1.LocalObjectReference{Name: "registry-credentials"}
+		Expect(sameImagePullSecrets(nil, []corev1.LocalObjectReference{})).To(BeTrue())
+		Expect(sameImagePullSecrets([]corev1.LocalObjectReference{secret}, []corev1.LocalObjectReference{secret})).To(BeTrue())
+		Expect(sameImagePullSecrets([]corev1.LocalObjectReference{secret}, nil)).To(BeFalse())
+	})
+})
+
 var _ = Describe("MCPServer Controller - Deployment Reconciliation Failures", func() {
 	const resourceName = "test-deployment-failure"
 
@@ -279,7 +422,7 @@ var _ = Describe("MCPServer Controller - Deployment Reconciliation Failures", fu
 	})
 
 	AfterEach(func() {
-		resource := &mcpv1alpha1.MCPServer{}
+		resource := &mcpv1beta1.MCPServer{}
 		err := k8sClient.Get(ctx, typeNamespacedName, resource)
 		if err == nil {
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
@@ -314,7 +457,7 @@ var _ = Describe("MCPServer Controller - Deployment Reconciliation Failures", fu
 		Expect(err.Error()).To(ContainSubstring("simulated deployment creation failure"))
 
 		By("Verifying status is updated with DeploymentUnavailable")
-		mcpServer := &mcpv1alpha1.MCPServer{}
+		mcpServer := &mcpv1beta1.MCPServer{}
 		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
 
 		acceptedCondition := meta.FindStatusCondition(mcpServer.Status.Conditions, "Accepted")
@@ -322,12 +465,12 @@ var _ = Describe("MCPServer Controller - Deployment Reconciliation Failures", fu
 		Expect(acceptedCondition.Status).To(Equal(metav1.ConditionTrue))
 		Expect(acceptedCondition.Reason).To(Equal("Valid"))
 
-		readyCondition := meta.FindStatusCondition(mcpServer.Status.Conditions, "Ready")
-		Expect(readyCondition).NotTo(BeNil())
-		Expect(readyCondition.Status).To(Equal(metav1.ConditionFalse))
-		Expect(readyCondition.Reason).To(Equal(ReasonDeploymentUnavailable))
-		Expect(readyCondition.Message).To(ContainSubstring("Failed to reconcile Deployment"))
-		Expect(readyCondition.Message).To(ContainSubstring("simulated deployment creation failure"))
+		availableCondition := meta.FindStatusCondition(mcpServer.Status.Conditions, "Available")
+		Expect(availableCondition).NotTo(BeNil())
+		Expect(availableCondition.Status).To(Equal(metav1.ConditionFalse))
+		Expect(availableCondition.Reason).To(Equal(ReasonDeploymentUnavailable))
+		Expect(availableCondition.Message).To(ContainSubstring("Failed to reconcile Deployment"))
+		Expect(availableCondition.Message).To(ContainSubstring("simulated deployment creation failure"))
 	})
 
 	It("should update status with DeploymentUnavailable when deployment update fails", func() {
@@ -369,7 +512,7 @@ var _ = Describe("MCPServer Controller - Deployment Reconciliation Failures", fu
 		}
 
 		By("Updating MCPServer spec to trigger deployment reconciliation")
-		mcpServer := &mcpv1alpha1.MCPServer{}
+		mcpServer := &mcpv1beta1.MCPServer{}
 		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
 		mcpServer.Spec.Config.Env = []corev1.EnvVar{{Name: "TEST_VAR", Value: "test_value"}}
 		Expect(k8sClient.Update(ctx, mcpServer)).To(Succeed())
@@ -389,12 +532,12 @@ var _ = Describe("MCPServer Controller - Deployment Reconciliation Failures", fu
 		Expect(acceptedCondition.Status).To(Equal(metav1.ConditionTrue))
 		Expect(acceptedCondition.Reason).To(Equal("Valid"))
 
-		readyCondition := meta.FindStatusCondition(mcpServer.Status.Conditions, "Ready")
-		Expect(readyCondition).NotTo(BeNil())
-		Expect(readyCondition.Status).To(Equal(metav1.ConditionFalse))
-		Expect(readyCondition.Reason).To(Equal(ReasonDeploymentUnavailable))
-		Expect(readyCondition.Message).To(ContainSubstring("Failed to reconcile Deployment"))
-		Expect(readyCondition.Message).To(ContainSubstring("simulated deployment update failure"))
+		availableCondition := meta.FindStatusCondition(mcpServer.Status.Conditions, "Available")
+		Expect(availableCondition).NotTo(BeNil())
+		Expect(availableCondition.Status).To(Equal(metav1.ConditionFalse))
+		Expect(availableCondition.Reason).To(Equal(ReasonDeploymentUnavailable))
+		Expect(availableCondition.Message).To(ContainSubstring("Failed to reconcile Deployment"))
+		Expect(availableCondition.Message).To(ContainSubstring("simulated deployment update failure"))
 	})
 })
 
@@ -410,11 +553,11 @@ var _ = Describe("MCPServer Controller - Transient Validation Errors", func() {
 
 	BeforeEach(func() {
 		resource := newTestMCPServer(resourceName)
-		resource.Spec.Config.Storage = []mcpv1alpha1.StorageMount{
+		resource.Spec.Config.Storage = []mcpv1beta1.StorageMount{
 			{
 				Path: "/data",
-				Source: mcpv1alpha1.StorageSource{
-					Type: mcpv1alpha1.StorageTypeConfigMap,
+				Source: mcpv1beta1.StorageSource{
+					Type: mcpv1beta1.StorageTypeConfigMap,
 					ConfigMap: &corev1.ConfigMapVolumeSource{
 						LocalObjectReference: corev1.LocalObjectReference{
 							Name: "test-config",
@@ -427,7 +570,7 @@ var _ = Describe("MCPServer Controller - Transient Validation Errors", func() {
 	})
 
 	AfterEach(func() {
-		resource := &mcpv1alpha1.MCPServer{}
+		resource := &mcpv1beta1.MCPServer{}
 		err := k8sClient.Get(ctx, typeNamespacedName, resource)
 		if err == nil {
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
@@ -458,7 +601,7 @@ var _ = Describe("MCPServer Controller - Transient Validation Errors", func() {
 		transientReconciler := &MCPServerReconciler{
 			Client:    interceptedClient,
 			Scheme:    k8sClient.Scheme(),
-			APIReader: k8sClient,
+			APIReader: interceptedClient,
 		}
 
 		By("Reconciling with transient ConfigMap validation failure")
@@ -469,7 +612,7 @@ var _ = Describe("MCPServer Controller - Transient Validation Errors", func() {
 		Expect(err.Error()).To(ContainSubstring("transient error validating ConfigMap"))
 
 		By("Verifying status conditions are NOT updated")
-		mcpServer := &mcpv1alpha1.MCPServer{}
+		mcpServer := &mcpv1beta1.MCPServer{}
 		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
 
 		// Status should have no conditions set - the transient path preserves
@@ -477,8 +620,11 @@ var _ = Describe("MCPServer Controller - Transient Validation Errors", func() {
 		acceptedCondition := meta.FindStatusCondition(mcpServer.Status.Conditions, "Accepted")
 		Expect(acceptedCondition).To(BeNil())
 
-		readyCondition := meta.FindStatusCondition(mcpServer.Status.Conditions, "Ready")
-		Expect(readyCondition).To(BeNil())
+		availableCondition := meta.FindStatusCondition(mcpServer.Status.Conditions, "Available")
+		Expect(availableCondition).To(BeNil())
+
+		verifiedCondition := meta.FindStatusCondition(mcpServer.Status.Conditions, "Verified")
+		Expect(verifiedCondition).To(BeNil())
 	})
 
 	It("should preserve existing status conditions on transient error after prior successful reconcile", func() {
@@ -503,7 +649,7 @@ var _ = Describe("MCPServer Controller - Transient Validation Errors", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		By("Verifying Accepted=True was set")
-		mcpServer := &mcpv1alpha1.MCPServer{}
+		mcpServer := &mcpv1beta1.MCPServer{}
 		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
 		acceptedCondition := meta.FindStatusCondition(mcpServer.Status.Conditions, "Accepted")
 		Expect(acceptedCondition).NotTo(BeNil())
@@ -532,7 +678,7 @@ var _ = Describe("MCPServer Controller - Transient Validation Errors", func() {
 		transientReconciler := &MCPServerReconciler{
 			Client:    interceptedClient,
 			Scheme:    k8sClient.Scheme(),
-			APIReader: k8sClient,
+			APIReader: interceptedClient,
 		}
 
 		By("Reconciling with transient failure")
@@ -580,7 +726,7 @@ var _ = Describe("MCPServer Controller - Resource Requirements", func() {
 	})
 
 	AfterEach(func() {
-		res := &mcpv1alpha1.MCPServer{}
+		res := &mcpv1beta1.MCPServer{}
 		err := k8sClient.Get(ctx, typeNamespacedName, res)
 		if err == nil {
 			Expect(k8sClient.Delete(ctx, res)).To(Succeed())
@@ -636,7 +782,7 @@ var _ = Describe("MCPServer Controller - Resource Requirements", func() {
 		Expect(deployment.Spec.Template.Spec.Containers[0].Resources.Requests).To(HaveKeyWithValue(corev1.ResourceCPU, resource.MustParse("100m")))
 
 		By("Updating resources")
-		mcpServer := &mcpv1alpha1.MCPServer{}
+		mcpServer := &mcpv1beta1.MCPServer{}
 		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
 		mcpServer.Spec.Runtime.Resources = &corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
@@ -689,7 +835,7 @@ var _ = Describe("MCPServer Controller - Resource Requirements", func() {
 		Expect(deployment.Spec.Template.Spec.Containers[0].Resources.Requests).To(HaveKeyWithValue(corev1.ResourceCPU, resource.MustParse("100m")))
 
 		By("Removing resources")
-		mcpServer := &mcpv1alpha1.MCPServer{}
+		mcpServer := &mcpv1beta1.MCPServer{}
 		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
 		mcpServer.Spec.Runtime.Resources = nil
 		Expect(k8sClient.Update(ctx, mcpServer)).To(Succeed())
@@ -705,8 +851,36 @@ var _ = Describe("MCPServer Controller - Resource Requirements", func() {
 			Namespace: "default",
 		}, deployment)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(deployment.Spec.Template.Spec.Containers[0].Resources.Requests).To(BeEmpty())
-		Expect(deployment.Spec.Template.Spec.Containers[0].Resources.Limits).To(BeEmpty())
+		Expect(deployment.Spec.Template.Spec.Containers[0].Resources.Requests).To(HaveKeyWithValue(corev1.ResourceCPU, resource.MustParse("50m")))
+		Expect(deployment.Spec.Template.Spec.Containers[0].Resources.Requests).To(HaveKeyWithValue(corev1.ResourceMemory, resource.MustParse("64Mi")))
+		Expect(deployment.Spec.Template.Spec.Containers[0].Resources.Limits).To(HaveKeyWithValue(corev1.ResourceCPU, resource.MustParse("500m")))
+		Expect(deployment.Spec.Template.Spec.Containers[0].Resources.Limits).To(HaveKeyWithValue(corev1.ResourceMemory, resource.MustParse("256Mi")))
+	})
+
+	It("should apply default resources when none specified", func() {
+		defaultResName := "test-default-resources"
+		defaultResNN := types.NamespacedName{Name: defaultResName, Namespace: "default"}
+		mcpServer := newTestMCPServer(defaultResName)
+		// Resources is nil by default from newTestMCPServer
+		Expect(k8sClient.Create(ctx, mcpServer)).To(Succeed())
+		defer func() {
+			_ = k8sClient.Delete(ctx, &mcpv1beta1.MCPServer{
+				ObjectMeta: metav1.ObjectMeta{Name: defaultResName, Namespace: "default"},
+			})
+		}()
+
+		reconciler := newReconcilerForTest(k8sClient, k8sClient.Scheme())
+		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: defaultResNN})
+		Expect(err).NotTo(HaveOccurred())
+
+		deployment := &appsv1.Deployment{}
+		err = k8sClient.Get(ctx, client.ObjectKey{Name: defaultResName, Namespace: "default"}, deployment)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(1))
+		Expect(deployment.Spec.Template.Spec.Containers[0].Resources.Requests).To(HaveKeyWithValue(corev1.ResourceCPU, resource.MustParse("50m")))
+		Expect(deployment.Spec.Template.Spec.Containers[0].Resources.Requests).To(HaveKeyWithValue(corev1.ResourceMemory, resource.MustParse("64Mi")))
+		Expect(deployment.Spec.Template.Spec.Containers[0].Resources.Limits).To(HaveKeyWithValue(corev1.ResourceCPU, resource.MustParse("500m")))
+		Expect(deployment.Spec.Template.Spec.Containers[0].Resources.Limits).To(HaveKeyWithValue(corev1.ResourceMemory, resource.MustParse("256Mi")))
 	})
 
 	It("should handle resources with only requests (no limits)", func() {
@@ -880,7 +1054,7 @@ var _ = Describe("MCPServer Controller - Health Probes", func() {
 
 	BeforeEach(func() {
 		mcpServer := newTestMCPServer(resourceName)
-		mcpServer.Spec.Runtime.Health = mcpv1alpha1.HealthConfig{
+		mcpServer.Spec.Runtime.Health = mcpv1beta1.HealthConfig{
 			LivenessProbe: &corev1.Probe{
 				ProbeHandler: corev1.ProbeHandler{
 					HTTPGet: &corev1.HTTPGetAction{
@@ -905,7 +1079,7 @@ var _ = Describe("MCPServer Controller - Health Probes", func() {
 	})
 
 	AfterEach(func() {
-		mcpServer := &mcpv1alpha1.MCPServer{}
+		mcpServer := &mcpv1beta1.MCPServer{}
 		err := k8sClient.Get(ctx, typeNamespacedName, mcpServer)
 		if err == nil {
 			Expect(k8sClient.Delete(ctx, mcpServer)).To(Succeed())
@@ -970,7 +1144,7 @@ var _ = Describe("MCPServer Controller - Health Probes", func() {
 		Expect(deployment.Spec.Template.Spec.Containers[0].LivenessProbe.InitialDelaySeconds).To(Equal(int32(10)))
 
 		By("Updating probes")
-		mcpServer := &mcpv1alpha1.MCPServer{}
+		mcpServer := &mcpv1beta1.MCPServer{}
 		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
 		mcpServer.Spec.Runtime.Health.LivenessProbe = &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
@@ -1040,7 +1214,7 @@ var _ = Describe("MCPServer Controller - Health Probes", func() {
 		Expect(deployment.Spec.Template.Spec.Containers[0].LivenessProbe).NotTo(BeNil())
 
 		By("Removing probes")
-		mcpServer := &mcpv1alpha1.MCPServer{}
+		mcpServer := &mcpv1beta1.MCPServer{}
 		Expect(k8sClient.Get(ctx, typeNamespacedName, mcpServer)).To(Succeed())
 		mcpServer.Spec.Runtime.Health.LivenessProbe = nil
 		mcpServer.Spec.Runtime.Health.ReadinessProbe = nil
@@ -1413,6 +1587,23 @@ var _ = Describe("MCPServer Controller - TLS Env Var Propagation", func() {
 		Expect(env[2].Value).To(Equal("TLS_AES_128_GCM_SHA256"))
 	})
 
+	It("should propagate TLS_GROUPS to the operand deployment", func() {
+		mcpServer := newTestMCPServer("test-tls-groups")
+
+		reconciler := newReconcilerForTest(k8sClient, k8sClient.Scheme())
+		reconciler.TLSEnvVars = []corev1.EnvVar{
+			{Name: "TLS_MIN_VERSION", Value: "VersionTLS13"},
+			{Name: "TLS_GROUPS", Value: "X25519MLKEM768,X25519"},
+		}
+
+		deployment, err := reconciler.createDeployment(mcpServer)
+		Expect(err).NotTo(HaveOccurred())
+
+		env := deployment.Spec.Template.Spec.Containers[0].Env
+		Expect(env).To(ContainElement(corev1.EnvVar{Name: "TLS_MIN_VERSION", Value: "VersionTLS13"}))
+		Expect(env).To(ContainElement(corev1.EnvVar{Name: "TLS_GROUPS", Value: "X25519MLKEM768,X25519"}))
+	})
+
 	It("should filter out user-specified duplicates in favour of operator TLS vars", func() {
 		mcpServer := newTestMCPServer("test-tls-override")
 		mcpServer.Spec.Config.Env = []corev1.EnvVar{
@@ -1481,7 +1672,7 @@ var _ = Describe("MCPServer Controller - Deployment Reconcile Events", func() {
 	})
 
 	AfterEach(func() {
-		resource := &mcpv1alpha1.MCPServer{}
+		resource := &mcpv1beta1.MCPServer{}
 		err := k8sClient.Get(ctx, typeNamespacedName, resource)
 		if err == nil {
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())

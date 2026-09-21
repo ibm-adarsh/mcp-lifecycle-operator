@@ -29,13 +29,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	mcpv1alpha1 "github.com/kubernetes-sigs/mcp-lifecycle-operator/api/v1alpha1"
+	mcpv1beta1 "github.com/kubernetes-sigs/mcp-lifecycle-operator/api/v1beta1"
 )
 
 // reconcileService creates or updates the Service for the MCPServer.
 func (r *MCPServerReconciler) reconcileService(
 	ctx context.Context,
-	mcpServer *mcpv1alpha1.MCPServer,
+	mcpServer *mcpv1beta1.MCPServer,
 ) error {
 	logger := log.FromContext(ctx)
 
@@ -48,7 +48,7 @@ func (r *MCPServerReconciler) reconcileService(
 	existingService := &corev1.Service{}
 	err := r.Get(ctx, client.ObjectKey{Name: service.Name, Namespace: service.Namespace}, existingService)
 	if err != nil && apierrors.IsNotFound(err) {
-		logger.Info("Creating Service", "name", service.Name)
+		logger.Info("Creating Service", keyName, service.Name)
 		if err := applyCustomServiceMetadata(mcpServer, service); err != nil {
 			return fmt.Errorf("applying custom metadata failed; %w", err)
 		}
@@ -63,7 +63,7 @@ func (r *MCPServerReconciler) reconcileService(
 	}
 
 	// Validate ownership before updating
-	if err := r.validateOwnership(existingService, mcpServer); err != nil {
+	if err := r.validateOwnership(ctx, existingService, mcpServer); err != nil {
 		logger.Error(err, "Service ownership validation failed")
 		return err
 	}
@@ -88,32 +88,34 @@ func (r *MCPServerReconciler) reconcileService(
 		ownershipChanged = oldOwnerUID != string(newOwner.UID)
 	}
 
-	// Update if ports changed OR if we adopted an orphaned resource
+	// Update if the desired Service fields changed OR if we adopted an orphaned resource.
 	needsUpdate := !equality.Semantic.DeepEqual(service.Spec.Ports, existingService.Spec.Ports) ||
+		!equality.Semantic.DeepEqual(service.Spec.Selector, existingService.Spec.Selector) ||
 		existingService.Spec.SessionAffinity != service.Spec.SessionAffinity ||
 		serviceLabelsChanged(mcpServer, existingService) ||
 		serviceAnnotationsChanged(mcpServer, existingService) ||
 		ownershipChanged
 	if needsUpdate {
-		logger.Info("Updating Service", "name", existingService.Name)
+		logger.Info("Updating Service", keyName, existingService.Name)
 		if err := applyCustomServiceMetadata(mcpServer, existingService); err != nil {
 			return fmt.Errorf("applying custom service metadata; %w", err)
 		}
 		existingService.Spec.Ports = service.Spec.Ports
+		existingService.Spec.Selector = service.Spec.Selector
 		existingService.Spec.SessionAffinity = service.Spec.SessionAffinity
 		if err := r.Update(ctx, existingService); err != nil {
 			logger.Error(err, "Failed to update Service")
 			return err
 		}
 	} else {
-		logger.Info("Service already exists and is up to date", "name", service.Name)
+		logger.Info("Service already exists and is up to date", keyName, service.Name)
 	}
 
 	return nil
 }
 
 // createService creates a Service for the MCPServer
-func (r *MCPServerReconciler) createService(mcpServer *mcpv1alpha1.MCPServer) *corev1.Service {
+func (r *MCPServerReconciler) createService(mcpServer *mcpv1beta1.MCPServer) *corev1.Service {
 	labels := managedWorkloadLabels(mcpServer.Name)
 
 	service := &corev1.Service{

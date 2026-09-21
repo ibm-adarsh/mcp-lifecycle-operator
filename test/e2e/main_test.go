@@ -27,31 +27,57 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	"sigs.k8s.io/e2e-framework/pkg/env"
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 
 	mcpv1alpha1 "github.com/kubernetes-sigs/mcp-lifecycle-operator/api/v1alpha1"
+	mcpv1beta1 "github.com/kubernetes-sigs/mcp-lifecycle-operator/api/v1beta1"
 	f "github.com/kubernetes-sigs/mcp-lifecycle-operator/test/e2e/framework"
 )
 
 var testenv env.Environment
 
 func TestMain(m *testing.M) {
+	f.RegisterProfileFlag()
 	cfg, err := envconf.NewFromFlags()
 	if err != nil {
 		panic(err)
 	}
 
+	if labels := f.ResolveProfile(); labels != nil {
+		cfg.WithLabels(labels)
+	}
+
 	testenv = env.NewWithConfig(cfg)
 
-	// Register MCPServer types so the client can work with them.
-	if err := mcpv1alpha1.AddToScheme(cfg.Client().Resources().GetScheme()); err != nil {
+	// Register MCPServer types (both versions) so the client can work with
+	// them: v1beta1 is the storage version used by the bulk of the suite, and
+	// v1alpha1 is needed by the conversion test to exercise the deployed webhook.
+	scheme := cfg.Client().Resources().GetScheme()
+	if err := mcpv1beta1.AddToScheme(scheme); err != nil {
+		panic(err)
+	}
+	if err := mcpv1alpha1.AddToScheme(scheme); err != nil {
+		panic(err)
+	}
+	if err := gatewayv1.Install(scheme); err != nil {
 		panic(err)
 	}
 
+	// Pre-pull test images so parallel tests don't thundering-herd the
+	// registry with duplicate pulls on a cold node.
+	testenv.Setup(f.PrewarmImages(
+		f.DefaultMCPServerImage,
+		f.AlternateMCPServerImage,
+		f.BusyboxImage,
+	))
+
 	// Create a unique namespace before each test, delete it after.
 	testenv.BeforeEachTest(func(ctx context.Context, cfg *envconf.Config, t *testing.T) (context.Context, error) {
+		f.MustDiscoverOperatorOnce(ctx, cfg, t)
+
 		ns := envconf.RandomName("e2e", 16)
 		nsObj := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}}
 		if err := cfg.Client().Resources().Create(ctx, nsObj); err != nil {
@@ -101,6 +127,26 @@ func dumpDiagnostics(ctx context.Context, t *testing.T, cfg *envconf.Config, ns 
 		}
 	}
 
+	var bindings mcpv1alpha1.MCPGatewayBindingList
+	if err := r.List(ctx, &bindings); err == nil {
+		for _, b := range bindings.Items {
+			t.Logf("MCPGatewayBinding %s/%s provider=%s mcpServerRef=%s",
+				b.Namespace, b.Name, b.Spec.Provider, b.Spec.MCPServerRef)
+			for _, c := range b.Status.Conditions {
+				t.Logf("  condition %s=%s reason=%s message=%q",
+					c.Type, c.Status, c.Reason, c.Message)
+			}
+		}
+	}
+
+	var httpRoutes gatewayv1.HTTPRouteList
+	if err := r.List(ctx, &httpRoutes); err == nil {
+		for _, hr := range httpRoutes.Items {
+			t.Logf("HTTPRoute %s/%s parentRefs=%d rules=%d",
+				hr.Namespace, hr.Name, len(hr.Spec.ParentRefs), len(hr.Spec.Rules))
+		}
+	}
+
 	var deployments appsv1.DeploymentList
 	if err := r.List(ctx, &deployments); err == nil {
 		for _, d := range deployments.Items {
@@ -135,10 +181,9 @@ func dumpDiagnostics(ctx context.Context, t *testing.T, cfg *envconf.Config, ns 
 		}
 	}
 
-	// Also dump controller-manager pod logs from the operator namespace,
-	// since the controller is relevant to all test failures.
 	t.Log("--- controller-manager logs ---")
-	controllerNs := "mcp-lifecycle-operator-system"
+	opRef := f.MustDiscoverOperatorOnce(ctx, cfg, t)
+	controllerNs := opRef.Namespace
 	rCtrl := cfg.Client().Resources(controllerNs)
 	var ctrlPods corev1.PodList
 	if err := rCtrl.List(ctx, &ctrlPods); err == nil {

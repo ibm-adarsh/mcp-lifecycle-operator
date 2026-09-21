@@ -30,32 +30,41 @@ import (
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 	"sigs.k8s.io/e2e-framework/pkg/features"
 
-	mcpv1alpha1 "github.com/kubernetes-sigs/mcp-lifecycle-operator/api/v1alpha1"
+	mcpv1beta1 "github.com/kubernetes-sigs/mcp-lifecycle-operator/api/v1beta1"
 	f "github.com/kubernetes-sigs/mcp-lifecycle-operator/test/e2e/framework"
+	"github.com/kubernetes-sigs/mcp-lifecycle-operator/test/e2e/framework/labels/category"
+	"github.com/kubernetes-sigs/mcp-lifecycle-operator/test/e2e/framework/labels/scenario"
+	"github.com/kubernetes-sigs/mcp-lifecycle-operator/test/e2e/framework/labels/speed"
 )
 
 func TestImagePullFailure(t *testing.T) {
+	t.Parallel()
 	feature := features.New("MCPServer image pull failure").
-		WithLabel("type", "failure").
-		WithLabel("failure", "image-pull").
+		WithLabel(category.Label, category.Resilience).
+		WithLabel(speed.Label, speed.Slow).
+		WithLabel(scenario.Label, scenario.Failure).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			return f.SetupMCPServer(ctx, t, cfg, "img-pull-fail", false,
 				f.WithImage("invalid.example.com/nonexistent/image:v0.0.1"),
 			)
 		}).
-		Assess("Ready condition reports image pull failure", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+		Assess("Available condition reports image pull failure", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			server := f.ServerFromContext(ctx)
 			r := cfg.Client().Resources()
 
 			f.WaitForMCPServerConditionMessageContains(ctx, t, r, server,
-				"Ready", metav1.ConditionFalse, "DeploymentUnavailable", "Image pull failed",
+				"Available", metav1.ConditionFalse, "DeploymentUnavailable", "Image pull failed",
 				3*time.Minute)
 
 			if err := r.Get(ctx, server.Name, server.Namespace, server); err != nil {
 				t.Fatalf("failed to get MCPServer: %v", err)
 			}
-			ready := f.GetMCPServerCondition(server, "Ready")
-			t.Logf("Ready condition: status=%s reason=%s message=%q", ready.Status, ready.Reason, ready.Message)
+			available := f.GetMCPServerCondition(server, "Available")
+			t.Logf("Available condition: status=%s reason=%s message=%q", available.Status, available.Reason, available.Message)
+
+			if server.Status.Address != nil && server.Status.Address.URL != "" {
+				t.Fatalf("expected status.address.url to be unset when Available=False, got %q", server.Status.Address.URL)
+			}
 
 			return ctx
 		}).
@@ -78,7 +87,7 @@ func TestImagePullFailure(t *testing.T) {
 			server := f.ServerFromContext(ctx)
 			r := cfg.Client().Resources()
 
-			f.AssertConditionStable(ctx, t, r, server, "Ready", metav1.ConditionFalse, 15*time.Second)
+			f.AssertConditionStable(ctx, t, r, server, "Available", metav1.ConditionFalse, 15*time.Second)
 
 			return ctx
 		}).
@@ -91,33 +100,39 @@ func TestImagePullFailure(t *testing.T) {
 }
 
 func TestContainerCrashLoop(t *testing.T) {
+	t.Parallel()
 	feature := features.New("MCPServer container crash loop").
-		WithLabel("type", "failure").
-		WithLabel("failure", "crash-loop").
+		WithLabel(category.Label, category.Resilience).
+		WithLabel(speed.Label, speed.Moderate).
+		WithLabel(scenario.Label, scenario.Failure).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			return f.SetupMCPServer(ctx, t, cfg, "crash-loop", false,
-				f.WithImage("docker.io/library/busybox:1.37"),
+				f.WithImage(f.BusyboxImage),
 				f.WithArguments("sh", "-c", "exit 1"),
 				f.WithPort(8080),
 				f.WithSecurityContext(&corev1.SecurityContext{}),
 			)
 		}).
-		Assess("Ready condition reports crash loop", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+		Assess("Available condition reports crash loop", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			server := f.ServerFromContext(ctx)
 			r := cfg.Client().Resources()
 
 			f.WaitForMCPServerConditionMessageContains(ctx, t, r, server,
-				"Ready", metav1.ConditionFalse, "DeploymentUnavailable", "Container crashing",
+				"Available", metav1.ConditionFalse, "DeploymentUnavailable", "Container crashing",
 				4*time.Minute)
 
 			if err := r.Get(ctx, server.Name, server.Namespace, server); err != nil {
 				t.Fatalf("failed to get MCPServer: %v", err)
 			}
-			ready := f.GetMCPServerCondition(server, "Ready")
-			t.Logf("Ready condition: status=%s reason=%s message=%q", ready.Status, ready.Reason, ready.Message)
+			available := f.GetMCPServerCondition(server, "Available")
+			t.Logf("Available condition: status=%s reason=%s message=%q", available.Status, available.Reason, available.Message)
 
-			if !strings.Contains(ready.Message, "exit code") {
-				t.Errorf("expected message to contain exit code details, got %q", ready.Message)
+			if !strings.Contains(available.Message, "exit code") {
+				t.Errorf("expected message to contain exit code details, got %q", available.Message)
+			}
+
+			if server.Status.Address != nil && server.Status.Address.URL != "" {
+				t.Fatalf("expected status.address.url to be unset when Available=False, got %q", server.Status.Address.URL)
 			}
 
 			return ctx
@@ -131,31 +146,44 @@ func TestContainerCrashLoop(t *testing.T) {
 }
 
 func TestMCPHandshakeFailure(t *testing.T) {
+	t.Parallel()
 	feature := features.New("MCPServer handshake failure").
-		WithLabel("type", "failure").
-		WithLabel("failure", "mcp-handshake").
+		WithLabel(category.Label, category.Resilience).
+		WithLabel(speed.Label, speed.Fast).
+		WithLabel(scenario.Label, scenario.Failure).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			return f.SetupMCPServer(ctx, t, cfg, "handshake-fail", false,
 				f.WithPath("/not-mcp"),
 			)
 		}).
-		Assess("Ready condition reports MCP endpoint unavailable", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+		Assess("Verified condition reports MCP endpoint unavailable", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			server := f.ServerFromContext(ctx)
 			r := cfg.Client().Resources()
 
 			f.WaitForMCPServerConditionReason(ctx, t, r, server,
-				"Ready", metav1.ConditionFalse, "MCPEndpointUnavailable",
+				"Verified", metav1.ConditionFalse, "EndpointUnavailable",
 				5*time.Minute)
 
 			if err := r.Get(ctx, server.Name, server.Namespace, server); err != nil {
 				t.Fatalf("failed to get MCPServer: %v", err)
 			}
-			ready := f.GetMCPServerCondition(server, "Ready")
-			t.Logf("Ready condition: status=%s reason=%s message=%q", ready.Status, ready.Reason, ready.Message)
+			verified := f.GetMCPServerCondition(server, "Verified")
+			t.Logf("Verified condition: status=%s reason=%s message=%q", verified.Status, verified.Reason, verified.Message)
 
-			if !strings.Contains(ready.Message, "MCP endpoint is not serving a valid MCP protocol") {
-				t.Errorf("expected message about MCP protocol failure, got %q", ready.Message)
+			if !strings.Contains(verified.Message, "MCP endpoint is not serving a valid MCP protocol") {
+				t.Errorf("expected message about MCP protocol failure, got %q", verified.Message)
 			}
+
+			// The workload itself is healthy (only the MCP endpoint is wrong),
+			// so the two-condition contract is Available=True with Verified=False.
+			available := f.GetMCPServerCondition(server, "Available")
+			if available == nil || available.Status != metav1.ConditionTrue {
+				t.Error("expected Available=True (workload is up; only the MCP endpoint is invalid)")
+			}
+
+			// status.address is published only when Verified=True; a failed
+			// handshake must not leak an address.
+			f.AssertAddressUnset(t, server)
 
 			return ctx
 		}).
@@ -183,9 +211,11 @@ func TestMCPHandshakeFailure(t *testing.T) {
 }
 
 func TestMissingConfigMapReference(t *testing.T) {
+	t.Parallel()
 	feature := features.New("MCPServer missing ConfigMap reference").
-		WithLabel("type", "failure").
-		WithLabel("failure", "missing-configmap").
+		WithLabel(category.Label, category.Resilience).
+		WithLabel(speed.Label, speed.Fast).
+		WithLabel(scenario.Label, scenario.Failure).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			return f.SetupMCPServer(ctx, t, cfg, "missing-cm", false,
 				f.WithEnvFrom(corev1.EnvFromSource{
@@ -218,12 +248,12 @@ func TestMissingConfigMapReference(t *testing.T) {
 
 			return ctx
 		}).
-		Assess("Ready condition is False with reason ConfigurationInvalid", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+		Assess("Available condition is False with reason ConfigurationInvalid", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			server := f.ServerFromContext(ctx)
 			r := cfg.Client().Resources()
 
 			f.WaitForMCPServerConditionReason(ctx, t, r, server,
-				"Ready", metav1.ConditionFalse, "ConfigurationInvalid",
+				"Available", metav1.ConditionFalse, "ConfigurationInvalid",
 				30*time.Second)
 
 			return ctx
@@ -237,9 +267,11 @@ func TestMissingConfigMapReference(t *testing.T) {
 }
 
 func TestMissingSecretReference(t *testing.T) {
+	t.Parallel()
 	feature := features.New("MCPServer missing Secret reference").
-		WithLabel("type", "failure").
-		WithLabel("failure", "missing-secret").
+		WithLabel(category.Label, category.Resilience).
+		WithLabel(speed.Label, speed.Fast).
+		WithLabel(scenario.Label, scenario.Failure).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			return f.SetupMCPServer(ctx, t, cfg, "missing-secret", false,
 				f.WithEnvFrom(corev1.EnvFromSource{
@@ -272,12 +304,12 @@ func TestMissingSecretReference(t *testing.T) {
 
 			return ctx
 		}).
-		Assess("Ready condition is False with reason ConfigurationInvalid", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+		Assess("Available condition is False with reason ConfigurationInvalid", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			server := f.ServerFromContext(ctx)
 			r := cfg.Client().Resources()
 
 			f.WaitForMCPServerConditionReason(ctx, t, r, server,
-				"Ready", metav1.ConditionFalse, "ConfigurationInvalid",
+				"Available", metav1.ConditionFalse, "ConfigurationInvalid",
 				30*time.Second)
 
 			return ctx
@@ -291,15 +323,17 @@ func TestMissingSecretReference(t *testing.T) {
 }
 
 func TestMissingStorageConfigMapReference(t *testing.T) {
+	t.Parallel()
 	feature := features.New("MCPServer missing storage ConfigMap reference").
-		WithLabel("type", "failure").
-		WithLabel("failure", "missing-storage-configmap").
+		WithLabel(category.Label, category.Resilience).
+		WithLabel(speed.Label, speed.Fast).
+		WithLabel(scenario.Label, scenario.Failure).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			return f.SetupMCPServer(ctx, t, cfg, "missing-storage", false,
-				f.WithStorage(mcpv1alpha1.StorageMount{
+				f.WithStorage(mcpv1beta1.StorageMount{
 					Path: "/etc/mcp-config",
-					Source: mcpv1alpha1.StorageSource{
-						Type: mcpv1alpha1.StorageTypeConfigMap,
+					Source: mcpv1beta1.StorageSource{
+						Type: mcpv1beta1.StorageTypeConfigMap,
 						ConfigMap: &corev1.ConfigMapVolumeSource{
 							LocalObjectReference: corev1.LocalObjectReference{
 								Name: "nonexistent-storage-cm",
@@ -319,12 +353,12 @@ func TestMissingStorageConfigMapReference(t *testing.T) {
 
 			return ctx
 		}).
-		Assess("Ready condition is False with reason ConfigurationInvalid", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+		Assess("Available condition is False with reason ConfigurationInvalid", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			server := f.ServerFromContext(ctx)
 			r := cfg.Client().Resources()
 
 			f.WaitForMCPServerConditionReason(ctx, t, r, server,
-				"Ready", metav1.ConditionFalse, "ConfigurationInvalid",
+				"Available", metav1.ConditionFalse, "ConfigurationInvalid",
 				30*time.Second)
 
 			return ctx
@@ -338,9 +372,11 @@ func TestMissingStorageConfigMapReference(t *testing.T) {
 }
 
 func TestRecoveryFromMissingConfigMap(t *testing.T) {
+	t.Parallel()
 	feature := features.New("MCPServer recovery from missing ConfigMap").
-		WithLabel("type", "recovery").
-		WithLabel("failure", "missing-configmap").
+		WithLabel(category.Label, category.Resilience).
+		WithLabel(speed.Label, speed.Moderate).
+		WithLabel(scenario.Label, scenario.Recovery).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			return f.SetupMCPServer(ctx, t, cfg, "recovery-cm", false,
 				f.WithEnvFrom(corev1.EnvFromSource{
@@ -386,9 +422,10 @@ func TestRecoveryFromMissingConfigMap(t *testing.T) {
 				"Accepted", metav1.ConditionTrue, 2*time.Minute)
 			t.Log("Accepted=True after ConfigMap creation")
 
-			f.WaitForMCPServerCondition(ctx, t, r, server,
-				"Ready", metav1.ConditionTrue, 3*time.Minute)
-			t.Log("Ready=True — full recovery complete")
+			// Full recovery means the workload is back up (Available) and the
+			// MCP handshake succeeds again (Verified), not just Available.
+			f.WaitForMCPServerReconciledAndReady(ctx, t, r, server, 3*time.Minute)
+			t.Log("Available=True and Verified=True - full recovery complete")
 
 			return ctx
 		}).
@@ -401,22 +438,24 @@ func TestRecoveryFromMissingConfigMap(t *testing.T) {
 }
 
 func TestRecoveryFromImagePullFailure(t *testing.T) {
+	t.Parallel()
 	feature := features.New("MCPServer recovery from image pull failure").
-		WithLabel("type", "recovery").
-		WithLabel("failure", "image-pull").
+		WithLabel(category.Label, category.Resilience).
+		WithLabel(speed.Label, speed.Slow).
+		WithLabel(scenario.Label, scenario.Recovery).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			return f.SetupMCPServer(ctx, t, cfg, "recovery-img", false,
 				f.WithImage("invalid.example.com/nonexistent/image:v0.0.1"),
 			)
 		}).
-		Assess("initially Ready=False with image pull failure", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+		Assess("initially Available=False with image pull failure", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			server := f.ServerFromContext(ctx)
 			r := cfg.Client().Resources()
 
 			f.WaitForMCPServerConditionMessageContains(ctx, t, r, server,
-				"Ready", metav1.ConditionFalse, "DeploymentUnavailable", "Image pull failed",
+				"Available", metav1.ConditionFalse, "DeploymentUnavailable", "Image pull failed",
 				3*time.Minute)
-			t.Log("confirmed Ready=False with image pull failure")
+			t.Log("confirmed Available=False with image pull failure")
 
 			return ctx
 		}).
@@ -424,13 +463,13 @@ func TestRecoveryFromImagePullFailure(t *testing.T) {
 			server := f.ServerFromContext(ctx)
 			r := cfg.Client().Resources()
 
-			f.UpdateWithRetry(ctx, t, r, server, func(s *mcpv1alpha1.MCPServer) {
-				s.Spec.Source.ContainerImage.Ref = "quay.io/matzew/mcp-everything:latest"
+			f.UpdateWithRetry(ctx, t, r, server, func(s *mcpv1beta1.MCPServer) {
+				s.Spec.Source.ContainerImage.Ref = f.DefaultMCPServerImage
 			})
-			t.Log("updated image to quay.io/matzew/mcp-everything:latest")
+			t.Log("updated image to default MCP server image")
 
 			f.WaitForMCPServerReconciledAndReady(ctx, t, r, server, 5*time.Minute)
-			t.Log("Ready=True — recovery from image pull failure complete")
+			t.Log("Available=True and Verified=True - recovery from image pull failure complete")
 
 			return ctx
 		}).

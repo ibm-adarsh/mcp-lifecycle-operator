@@ -32,14 +32,17 @@ import (
 	"sigs.k8s.io/e2e-framework/pkg/features"
 
 	f "github.com/kubernetes-sigs/mcp-lifecycle-operator/test/e2e/framework"
+	"github.com/kubernetes-sigs/mcp-lifecycle-operator/test/e2e/framework/labels/category"
+	"github.com/kubernetes-sigs/mcp-lifecycle-operator/test/e2e/framework/labels/speed"
 )
 
 func TestMCPHandshake(t *testing.T) {
-	const mcpServerPort = 3001
+	t.Parallel()
+	const mcpServerPort = 8080
 
-	feature := features.New("MCP handshake with everything-mcp-server").
-		WithLabel("type", "mcp").
-		WithLabel("component", "mcpserver").
+	feature := features.New("MCP handshake with kubernetes-mcp-server").
+		WithLabel(category.Label, category.Networking).
+		WithLabel(speed.Label, speed.Moderate).
 		Setup(func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			return f.SetupMCPServer(ctx, t, cfg, "everything-mcp-server", true)
 		}).
@@ -50,9 +53,14 @@ func TestMCPHandshake(t *testing.T) {
 			t.Logf("MCP server pod %s is Running", pod.Name)
 			return ctx
 		}).
-		Assess("Accepted and Ready conditions are True", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
+		Assess("Accepted, Available, and Verified conditions are True", func(ctx context.Context, t *testing.T, cfg *envconf.Config) context.Context {
 			server := f.ServerFromContext(ctx)
 			r := cfg.Client().Resources()
+
+			// Setup only waits for Available=True, so Verified may still be
+			// transitioning. Wait for full readiness (Available + Verified)
+			// before asserting the conditions to avoid a flake.
+			f.WaitForMCPServerReconciledAndReady(ctx, t, r, server, 3*time.Minute)
 
 			if err := r.Get(ctx, server.Name, server.Namespace, server); err != nil {
 				t.Fatalf("failed to get MCPServer: %v", err)
@@ -63,13 +71,21 @@ func TestMCPHandshake(t *testing.T) {
 				t.Fatal("Accepted condition is not True")
 			}
 
-			ready := f.GetMCPServerCondition(server, "Ready")
-			if ready == nil || ready.Status != metav1.ConditionTrue {
-				t.Fatal("Ready condition is not True")
+			// Full readiness is the two-condition contract: Available (workload
+			// up) and Verified (MCP handshake succeeded). Assert both, not just
+			// Verified, so a regression in either condition is caught.
+			available := f.GetMCPServerCondition(server, "Available")
+			if available == nil || available.Status != metav1.ConditionTrue {
+				t.Fatal("Available condition is not True")
+			}
+
+			verified := f.GetMCPServerCondition(server, "Verified")
+			if verified == nil || verified.Status != metav1.ConditionTrue {
+				t.Fatal("Verified condition is not True")
 			}
 
 			f.AssertAddressURL(t, server, mcpServerPort)
-			t.Logf("MCPServer status: address=%s, Accepted=True, Ready=True", server.Status.Address.URL)
+			t.Logf("MCPServer status: address=%s, Accepted=True, Available=True, Verified=True", server.Status.Address.URL)
 
 			return ctx
 		}).
@@ -115,7 +131,7 @@ func TestMCPHandshake(t *testing.T) {
 				t.Fatalf("failed to list MCP tools: %v", err)
 			}
 			if toolsResult == nil || len(toolsResult.Tools) == 0 {
-				t.Fatal("expected the everything-mcp-server to expose at least one tool")
+				t.Fatal("expected the kubernetes-mcp-server to expose at least one tool")
 			}
 
 			t.Logf("found %d tools:", len(toolsResult.Tools))

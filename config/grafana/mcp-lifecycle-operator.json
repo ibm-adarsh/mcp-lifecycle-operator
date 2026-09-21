@@ -88,7 +88,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "count(mcpserver_condition_info{type=\"Ready\", namespace=~\"$mcpserver_namespace\"})",
+          "expr": "count(mcpserver_condition_info{type=\"Available\", namespace=~\"$mcpserver_namespace\"})",
           "range": true,
           "refId": "A"
         }
@@ -612,13 +612,13 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum by (status) (mcpserver_condition_info{type=\"Ready\", namespace=~\"$mcpserver_namespace\"})",
+          "expr": "sum by (status) (mcpserver_condition_info{type=\"Available\", namespace=~\"$mcpserver_namespace\"})",
           "range": true,
           "refId": "A",
           "legendFormat": "{{status}}"
         }
       ],
-      "title": "MCPServers by Ready status",
+      "title": "MCPServers by Available status",
       "type": "piechart"
     },
     {
@@ -703,7 +703,7 @@
       },
       "gridPos": {
         "h": 6,
-        "w": 12,
+        "w": 8,
         "x": 0,
         "y": 29
       },
@@ -759,8 +759,8 @@
       },
       "gridPos": {
         "h": 6,
-        "w": 12,
-        "x": 12,
+        "w": 8,
+        "x": 8,
         "y": 29
       },
       "id": 24,
@@ -787,6 +787,62 @@
         }
       ],
       "title": "NetworkPolicy failures (rate)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 29
+      },
+      "id": 25,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(mcpserver_gateway_binding_failures_total{namespace=~\"$mcpserver_namespace\"}[5m])) by (namespace)",
+          "range": true,
+          "refId": "A",
+          "legendFormat": "{{namespace}}"
+        }
+      ],
+      "title": "Gateway binding failures (rate)",
       "type": "timeseries"
     },
     {
@@ -1181,6 +1237,33 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
+        "definition": "label_values(mcpserver_condition_info, namespace)",
+        "hide": 0,
+        "includeAll": true,
+        "allValue": ".*",
+        "label": "MCPServer namespace",
+        "multi": true,
+        "name": "mcpserver_namespace",
+        "options": [],
+        "query": {
+          "query": "label_values(mcpserver_condition_info, namespace)",
+          "refId": "PrometheusVariableQuery"
+        },
+        "refresh": 2,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
         "definition": "label_values(process_cpu_seconds_total, namespace)",
         "hide": 0,
         "includeAll": true,
@@ -1195,7 +1278,8 @@
         "refresh": 2,
         "regex": "",
         "sort": 1,
-        "type": "query"
+        "type": "query",
+        "allValue": ".*"
       }
     ]
   },

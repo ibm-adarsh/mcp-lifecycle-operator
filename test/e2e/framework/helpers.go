@@ -1,5 +1,3 @@
-//go:build e2e
-
 /*
 Copyright 2026 The Kubernetes Authors
 
@@ -33,6 +31,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/retry"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	"sigs.k8s.io/e2e-framework/klient/k8s"
 	"sigs.k8s.io/e2e-framework/klient/k8s/resources"
@@ -41,6 +40,8 @@ import (
 	"sigs.k8s.io/e2e-framework/pkg/envconf"
 
 	mcpv1alpha1 "github.com/kubernetes-sigs/mcp-lifecycle-operator/api/v1alpha1"
+	mcpv1beta1 "github.com/kubernetes-sigs/mcp-lifecycle-operator/api/v1beta1"
+	mcpcontroller "github.com/kubernetes-sigs/mcp-lifecycle-operator/internal/controller"
 )
 
 // ContextKey is used to store values in context.
@@ -53,13 +54,14 @@ const (
 
 // ServerFromContext extracts the MCPServer stored by SetupMCPServer.
 // Returns nil if the server was never stored in context.
-func ServerFromContext(ctx context.Context) *mcpv1alpha1.MCPServer {
-	s, _ := ctx.Value(ServerKey).(*mcpv1alpha1.MCPServer)
+func ServerFromContext(ctx context.Context) *mcpv1beta1.MCPServer {
+	s, _ := ctx.Value(ServerKey).(*mcpv1beta1.MCPServer)
 	return s
 }
 
-// SetupMCPServer creates an MCPServer, optionally waits for Ready, and stores it in context.
-// Pass waitForReady=true to block until the server reaches Ready=True before returning.
+// SetupMCPServer creates an MCPServer, optionally waits for it to become available,
+// and stores it in context. Pass waitForReady=true to block until the server reaches
+// Available=True before returning.
 func SetupMCPServer(ctx context.Context, t *testing.T, cfg *envconf.Config, name string, waitForReady bool, opts ...MCPServerOption) context.Context {
 	t.Helper()
 	ns, ok := ctx.Value(NsKey).(string)
@@ -75,8 +77,8 @@ func SetupMCPServer(ctx context.Context, t *testing.T, cfg *envconf.Config, name
 	t.Logf("created MCPServer %s/%s", ns, server.Name)
 
 	if waitForReady {
-		WaitForMCPServerCondition(ctx, t, r, server, "Ready", metav1.ConditionTrue)
-		t.Log("MCPServer is Ready")
+		WaitForMCPServerCondition(ctx, t, r, server, mcpcontroller.ConditionTypeAvailable, metav1.ConditionTrue)
+		t.Log("MCPServer is Available")
 	}
 
 	return context.WithValue(ctx, ServerKey, server)
@@ -85,7 +87,7 @@ func SetupMCPServer(ctx context.Context, t *testing.T, cfg *envconf.Config, name
 // WaitForMCPServerCondition polls until the named condition reaches the desired status.
 // An optional timeout can be provided; defaults to 3 minutes.
 func WaitForMCPServerCondition(ctx context.Context, t *testing.T, r *resources.Resources,
-	server *mcpv1alpha1.MCPServer, condType string, status metav1.ConditionStatus, timeout ...time.Duration) {
+	server *mcpv1beta1.MCPServer, condType string, status metav1.ConditionStatus, timeout ...time.Duration) {
 	t.Helper()
 	d := 3 * time.Minute
 	if len(timeout) > 0 {
@@ -93,7 +95,7 @@ func WaitForMCPServerCondition(ctx context.Context, t *testing.T, r *resources.R
 	}
 	err := wait.For(
 		conditions.New(r).ResourceMatch(server, func(obj k8s.Object) bool {
-			s := obj.(*mcpv1alpha1.MCPServer)
+			s := obj.(*mcpv1beta1.MCPServer)
 			for _, c := range s.Status.Conditions {
 				if c.Type == condType && c.Status == status {
 					return true
@@ -110,11 +112,15 @@ func WaitForMCPServerCondition(ctx context.Context, t *testing.T, r *resources.R
 	}
 }
 
-// WaitForMCPServerReconciledAndReady polls until the controller has reconciled the
-// current generation (observedGeneration >= generation) and Ready=True.
-// Use this after mutating the MCPServer spec to avoid seeing stale Ready from before the update.
-func WaitForMCPServerReconciledAndReady(ctx context.Context, t *testing.T, r *resources.Resources,
-	server *mcpv1alpha1.MCPServer, timeout ...time.Duration) {
+// WaitForMCPServerGatewayAddress polls until the MCPServer both reports
+// GatewayRegistered=True and has a non-empty status.address.url. The gateway
+// address is derived from the binding's status URL, which can still be empty at
+// the instant GatewayRegistered flips to True (the gateway address is populated
+// by a later reconcile). Waiting only on the condition therefore races the URL
+// being set; callers that assert on the address must wait on both.
+// An optional timeout can be provided; defaults to 3 minutes.
+func WaitForMCPServerGatewayAddress(ctx context.Context, t *testing.T, r *resources.Resources,
+	server *mcpv1beta1.MCPServer, timeout ...time.Duration) {
 	t.Helper()
 	d := 3 * time.Minute
 	if len(timeout) > 0 {
@@ -122,32 +128,71 @@ func WaitForMCPServerReconciledAndReady(ctx context.Context, t *testing.T, r *re
 	}
 	err := wait.For(
 		conditions.New(r).ResourceMatch(server, func(obj k8s.Object) bool {
-			s := obj.(*mcpv1alpha1.MCPServer)
+			s := obj.(*mcpv1beta1.MCPServer)
+			registered := false
+			for _, c := range s.Status.Conditions {
+				if c.Type == "GatewayRegistered" && c.Status == metav1.ConditionTrue {
+					registered = true
+					break
+				}
+			}
+			return registered && s.Status.Address != nil && s.Status.Address.URL != ""
+		}),
+		wait.WithContext(ctx),
+		wait.WithTimeout(d),
+		wait.WithInterval(2*time.Second),
+	)
+	if err != nil {
+		t.Fatalf("MCPServer %s/%s: timed out waiting for GatewayRegistered=True and status.address.url to be set: %v",
+			server.Namespace, server.Name, err)
+	}
+}
+
+// WaitForMCPServerReconciledAndReady polls until the controller has reconciled the
+// current generation (observedGeneration >= generation) and the server is fully
+// ready: both Available=True (workload up) and Verified=True (MCP handshake
+// succeeded). Available alone leaves status.address unpublished, so callers that
+// assert full readiness must wait on both conditions.
+// Use this after mutating the MCPServer spec to avoid seeing stale status from before the update.
+func WaitForMCPServerReconciledAndReady(ctx context.Context, t *testing.T, r *resources.Resources,
+	server *mcpv1beta1.MCPServer, timeout ...time.Duration) {
+	t.Helper()
+	d := 3 * time.Minute
+	if len(timeout) > 0 {
+		d = timeout[0]
+	}
+	err := wait.For(
+		conditions.New(r).ResourceMatch(server, func(obj k8s.Object) bool {
+			s := obj.(*mcpv1beta1.MCPServer)
 			if s.Status.ObservedGeneration < s.Generation {
 				return false
 			}
+			var available, verified bool
 			for _, c := range s.Status.Conditions {
-				if c.Type == "Ready" && c.Status == metav1.ConditionTrue {
-					return true
+				switch {
+				case c.Type == mcpcontroller.ConditionTypeAvailable && c.Status == metav1.ConditionTrue:
+					available = true
+				case c.Type == mcpcontroller.ConditionTypeVerified && c.Status == metav1.ConditionTrue:
+					verified = true
 				}
 			}
-			return false
+			return available && verified
 		}),
 		wait.WithTimeout(d),
 		wait.WithInterval(2*time.Second),
 	)
 	if err != nil {
-		t.Fatalf("MCPServer %s/%s: timed out waiting for reconciled Ready: %v",
+		t.Fatalf("MCPServer %s/%s: timed out waiting for reconciled Available=True and Verified=True: %v",
 			server.Namespace, server.Name, err)
 	}
 }
 
 // WaitForMCPServerReconciled polls until the controller has reconciled the
 // current generation (observedGeneration >= generation) without requiring a
-// specific Ready status. Use this after spec mutations where the pod may not
-// become Ready (e.g. port changes when the container image uses a fixed port).
+// specific Available status. Use this after spec mutations where the pod may not
+// become available (e.g. port changes when the container image uses a fixed port).
 func WaitForMCPServerReconciled(ctx context.Context, t *testing.T, r *resources.Resources,
-	server *mcpv1alpha1.MCPServer, timeout ...time.Duration) {
+	server *mcpv1beta1.MCPServer, timeout ...time.Duration) {
 	t.Helper()
 	d := 3 * time.Minute
 	if len(timeout) > 0 {
@@ -155,7 +200,7 @@ func WaitForMCPServerReconciled(ctx context.Context, t *testing.T, r *resources.
 	}
 	err := wait.For(
 		conditions.New(r).ResourceMatch(server, func(obj k8s.Object) bool {
-			s := obj.(*mcpv1alpha1.MCPServer)
+			s := obj.(*mcpv1beta1.MCPServer)
 			return s.Status.ObservedGeneration >= s.Generation
 		}),
 		wait.WithTimeout(d),
@@ -171,7 +216,7 @@ func WaitForMCPServerReconciled(ctx context.Context, t *testing.T, r *resources.
 // WaitForMCPServerConditionReason polls until the named condition reaches the desired status and reason.
 // An optional timeout can be provided; defaults to 3 minutes.
 func WaitForMCPServerConditionReason(ctx context.Context, t *testing.T, r *resources.Resources,
-	server *mcpv1alpha1.MCPServer, condType string, status metav1.ConditionStatus, reason string, timeout ...time.Duration) {
+	server *mcpv1beta1.MCPServer, condType string, status metav1.ConditionStatus, reason string, timeout ...time.Duration) {
 	t.Helper()
 	d := 3 * time.Minute
 	if len(timeout) > 0 {
@@ -179,7 +224,7 @@ func WaitForMCPServerConditionReason(ctx context.Context, t *testing.T, r *resou
 	}
 	err := wait.For(
 		conditions.New(r).ResourceMatch(server, func(obj k8s.Object) bool {
-			s := obj.(*mcpv1alpha1.MCPServer)
+			s := obj.(*mcpv1beta1.MCPServer)
 			for _, c := range s.Status.Conditions {
 				if c.Type == condType && c.Status == status && c.Reason == reason {
 					return true
@@ -200,7 +245,7 @@ func WaitForMCPServerConditionReason(ctx context.Context, t *testing.T, r *resou
 // status and reason, and its message contains the given substring.
 // An optional timeout can be provided; defaults to 3 minutes.
 func WaitForMCPServerConditionMessageContains(ctx context.Context, t *testing.T, r *resources.Resources,
-	server *mcpv1alpha1.MCPServer, condType string, status metav1.ConditionStatus, reason string,
+	server *mcpv1beta1.MCPServer, condType string, status metav1.ConditionStatus, reason string,
 	messageSubstring string, timeout ...time.Duration) {
 	t.Helper()
 	d := 3 * time.Minute
@@ -209,7 +254,7 @@ func WaitForMCPServerConditionMessageContains(ctx context.Context, t *testing.T,
 	}
 	err := wait.For(
 		conditions.New(r).ResourceMatch(server, func(obj k8s.Object) bool {
-			s := obj.(*mcpv1alpha1.MCPServer)
+			s := obj.(*mcpv1beta1.MCPServer)
 			for _, c := range s.Status.Conditions {
 				if c.Type == condType && c.Status == status && c.Reason == reason &&
 					strings.Contains(c.Message, messageSubstring) {
@@ -334,6 +379,146 @@ func WaitForEndpointsReady(ctx context.Context, t *testing.T, cfg *envconf.Confi
 		t.Fatalf("endpoints for Service %s/%s never became ready: %v", namespace, name, err)
 	}
 	t.Logf("Service %s/%s has ready endpoints", namespace, name)
+}
+
+// CreateGatewayConfigMap creates a ConfigMap with gateway integration settings.
+// It copies all entries from configData except "gateway-class", which is not a
+// ConfigMap key but a provider registration detail.
+func CreateGatewayConfigMap(ctx context.Context, t *testing.T, cfg *envconf.Config,
+	name, namespace string, configData map[string]string) {
+	t.Helper()
+	data := make(map[string]string, len(configData))
+	for k, v := range configData {
+		if k == "gateway-class" {
+			continue
+		}
+		data[k] = v
+	}
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Data: data,
+	}
+	if err := cfg.Client().Resources().Create(ctx, cm); err != nil {
+		t.Fatalf("failed to create gateway ConfigMap: %v", err)
+	}
+	t.Logf("created gateway ConfigMap %s/%s", namespace, name)
+}
+
+const defaultListenerName = "http"
+
+// EnsureGateway creates a GatewayClass, namespace, and Gateway resource if they don't
+// already exist. The Gateway allows routes from all namespaces so that HTTPRoutes
+// created in per-test namespaces are accepted by the gateway controller.
+// It returns the listener name of the actual Gateway on the cluster so that
+// callers can align their section-name config with the deployed Gateway.
+func EnsureGateway(ctx context.Context, t *testing.T, cfg *envconf.Config,
+	name, namespace, gatewayClassName string) string {
+	t.Helper()
+	r := cfg.Client().Resources()
+
+	gc := &gatewayv1.GatewayClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: gatewayClassName,
+		},
+		Spec: gatewayv1.GatewayClassSpec{
+			ControllerName: "gateway.envoyproxy.io/gatewayclass-controller",
+		},
+	}
+	if err := r.Create(ctx, gc); err != nil && !apierrors.IsAlreadyExists(err) {
+		t.Fatalf("failed to create GatewayClass %s: %v", gatewayClassName, err)
+	}
+
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
+	if err := r.Create(ctx, ns); err != nil && !apierrors.IsAlreadyExists(err) {
+		t.Fatalf("failed to create namespace %s: %v", namespace, err)
+	}
+
+	fromAll := gatewayv1.NamespacesFromAll
+	gw := &gatewayv1.Gateway{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: gatewayv1.GatewaySpec{
+			GatewayClassName: gatewayv1.ObjectName(gatewayClassName),
+			Listeners: []gatewayv1.Listener{{
+				Name:     defaultListenerName,
+				Protocol: gatewayv1.HTTPProtocolType,
+				Port:     80,
+				AllowedRoutes: &gatewayv1.AllowedRoutes{
+					Namespaces: &gatewayv1.RouteNamespaces{
+						From: &fromAll,
+					},
+				},
+			}},
+		},
+	}
+	if err := r.Create(ctx, gw); err != nil && !apierrors.IsAlreadyExists(err) {
+		t.Fatalf("failed to create Gateway %s/%s: %v", namespace, name, err)
+	}
+
+	existing := &gatewayv1.Gateway{}
+	if err := r.Get(ctx, name, namespace, existing); err != nil {
+		t.Fatalf("failed to read Gateway %s/%s: %v", namespace, name, err)
+	}
+	listenerName := defaultListenerName
+	if len(existing.Spec.Listeners) > 0 {
+		listenerName = string(existing.Spec.Listeners[0].Name)
+	}
+	t.Logf("ensured Gateway %s/%s (class=%s, listener=%s)", namespace, name, gatewayClassName, listenerName)
+	return listenerName
+}
+
+// WaitForBindingRegistered polls until the MCPGatewayBinding's Registered condition
+// matches the desired status. An optional timeout can be provided; defaults to 3 minutes.
+func WaitForBindingRegistered(ctx context.Context, t *testing.T, r *resources.Resources,
+	binding *mcpv1alpha1.MCPGatewayBinding, status metav1.ConditionStatus, timeout ...time.Duration) {
+	t.Helper()
+	d := 3 * time.Minute
+	if len(timeout) > 0 {
+		d = timeout[0]
+	}
+	err := wait.For(
+		conditions.New(r).ResourceMatch(binding, func(obj k8s.Object) bool {
+			b := obj.(*mcpv1alpha1.MCPGatewayBinding)
+			for _, c := range b.Status.Conditions {
+				if c.Type == "Registered" && c.Status == status {
+					return true
+				}
+			}
+			return false
+		}),
+		wait.WithContext(ctx),
+		wait.WithTimeout(d),
+		wait.WithInterval(2*time.Second),
+	)
+	if err != nil {
+		t.Fatalf("MCPGatewayBinding %s/%s: timed out waiting for Registered=%s: %v",
+			binding.Namespace, binding.Name, status, err)
+	}
+}
+
+// WaitForBindingDeleted polls until the MCPGatewayBinding is deleted.
+func WaitForBindingDeleted(ctx context.Context, t *testing.T, r *resources.Resources,
+	binding *mcpv1alpha1.MCPGatewayBinding, timeout ...time.Duration) {
+	t.Helper()
+	d := 1 * time.Minute
+	if len(timeout) > 0 {
+		d = timeout[0]
+	}
+	err := wait.For(
+		conditions.New(r).ResourceDeleted(binding),
+		wait.WithContext(ctx),
+		wait.WithTimeout(d),
+		wait.WithInterval(2*time.Second),
+	)
+	if err != nil {
+		t.Fatalf("MCPGatewayBinding %s/%s: timed out waiting for deletion: %v",
+			binding.Namespace, binding.Name, err)
+	}
 }
 
 // UpdateWithRetry performs a read-modify-write loop with automatic retry on

@@ -38,7 +38,7 @@ type MCPServerStatusApplyConfiguration struct {
 	// Address contains the address of the MCP server service.
 	Address *MCPServerAddressApplyConfiguration `json:"address,omitempty"`
 	// ServerInfo contains identity and capability information reported by the
-	// MCP server during the protocol initialize handshake.
+	// MCP server during the protocol handshake (initialize or server/discover).
 	// This field is populated only after a successful handshake.
 	ServerInfo *MCPServerInfoApplyConfiguration `json:"serverInfo,omitempty"`
 	// HandshakeRetryCount tracks the number of consecutive MCP handshake
@@ -51,24 +51,17 @@ type MCPServerStatusApplyConfiguration struct {
 	ReadyReplicas *int32 `json:"readyReplicas,omitempty"`
 	// Conditions represent the latest available observations of the MCPServer's state.
 	//
-	// Standard condition types:
-	// - "Accepted": Configuration is valid and all referenced resources exist
-	// - "Ready": MCP server is operational and ready to serve requests
+	// Standard condition types (the stable part of the contract):
 	//
-	// The "Accepted" condition validates configuration before creating resources.
-	// Reasons: Valid (True), Invalid (False with details in message)
+	// - "Accepted": Configuration is valid and all referenced resources exist.
+	// - "Ready": MCP server is operational and ready to serve requests.
 	//
-	// The "Ready" condition indicates overall server readiness.
-	// Status=True means at least one instance is healthy and serving requests.
-	// Reasons:
-	// - Available: Server is ready (Status=True)
-	// - ConfigurationInvalid: Accepted=False, cannot proceed
-	// - DeploymentUnavailable: No healthy instances (all deployment/pod issues)
-	// - ScaledToZero: Deployment scaled to 0 replicas
-	// - Initializing: Waiting for initial status
+	// Each condition carries a Reason and a human-readable Message. The set of
+	// reasons is an implementation detail of the controller and is intentionally
+	// not enumerated here to avoid drift; specific failure details
+	// (ImagePullBackOff, OOMKilled, CrashLoop, etc.) are reported in the message,
+	// not the reason.
 	//
-	// Note: Specific failure details (ImagePullBackOff, OOMKilled, CrashLoop, etc.)
-	// are included in the condition message, not the reason.
 	Conditions []v1.ConditionApplyConfiguration `json:"conditions,omitempty"`
 }
 

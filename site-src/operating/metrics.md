@@ -35,12 +35,15 @@ Custom metrics use the Prometheus namespace **`mcpserver`** (exported names star
 
 | Metric | Type | Description |
 | --- | --- | --- |
-| `mcpserver_condition_info` | gauge | Current **Accepted** / **Ready** condition snapshot per `MCPServer`. Value is always `1`; filter by labels. |
+| `mcpserver_condition_info` | gauge | Current **Accepted** / **Available** / **Verified** condition snapshot per `MCPServer`. Value is always `1`; filter by labels. |
 | `mcpserver_validation_failures_total` | counter | Total permanent configuration validation failures (`ValidationError`). |
 | `mcpserver_deployment_failures_total` | counter | Total failures when reconciling the workload Deployment (`reason` is currently `ReconcileError`). |
 | `mcpserver_service_failures_total` | counter | Total failures when reconciling the Service (`reason` is currently `ReconcileError`). |
 | `mcpserver_networkpolicy_failures_total` | counter | Total failures when reconciling the NetworkPolicy (`reason` is currently `ReconcileError`). |
 | `mcpserver_reconcile_phase_duration_seconds` | histogram | Duration of reconciliation phases **validation**, **deployment**, **service**, and **networkpolicy** (seconds; default Prometheus histogram buckets). |
+| `mcpserver_handshake_total` | counter | Total MCP handshake outcomes per `MCPServer`, broken down by `result`. |
+| `mcpserver_handshake_duration_seconds` | histogram | Duration of MCP handshake operations in seconds (buckets: 0.1, 0.25, 0.5, 1, 2.5, 5, 10). |
+| `mcpserver_capability_changes_total` | counter | Total MCP server capability changes detected between reconcile generations. |
 
 ### Labels for `mcpserver_condition_info`
 
@@ -48,7 +51,7 @@ Custom metrics use the Prometheus namespace **`mcpserver`** (exported names star
 | --- | --- |
 | `name` | `MCPServer` name |
 | `namespace` | `MCPServer` namespace |
-| `type` | Condition type: `Accepted` or `Ready` |
+| `type` | Condition type: `Accepted`, `Available`, or `Verified` |
 | `status` | `True`, `False`, or `Unknown` |
 | `reason` | Condition reason (intended to mirror `.status.conditions[]`; see [Gauge versus API status](#gauge-versus-api-status)) |
 
@@ -59,13 +62,14 @@ Only one active series exists per `(name, namespace, type)`. On delete, both gau
 | `type` | Typical `reason` values | `status` notes |
 | --- | --- | --- |
 | `Accepted` | `Valid`, `Invalid` | Usually `True` or `False` |
-| `Ready` | `Available`, `ConfigurationInvalid`, `DeploymentUnavailable`, `ServiceUnavailable`, `NetworkPolicyUnavailable`, `ScaledToZero`, `Initializing`, `MCPEndpointUnavailable` | May be `Unknown` (for example `Initializing` while the Deployment has not reported conditions yet) |
+| `Available` | `Available`, `ConfigurationInvalid`, `DeploymentUnavailable`, `ServiceUnavailable`, `NetworkPolicyUnavailable`, `ScaledToZero`, `Initializing`, `GatewayNotRegistered` | May be `Unknown` (for example `Initializing` while the Deployment has not reported conditions yet) |
+| `Verified` | `Verified`, `NotVerified`, `EndpointUnavailable` | Handshake / endpoint verification state |
 
 ### Gauge versus API status
 
 In rare cases the **`mcpserver_condition_info` gauge** can **diverge** from what you see in **`MCPServer.status.conditions`**. When investigating correctness, treat **`MCPServer.status` as the source of truth**.
 
-- **Permanent validation error** — `Ready` / `ConfigurationInvalid` may appear in the API only after a successful status write, while the gauge updated earlier or on a different path.
+- **Permanent validation error** — `Available` / `ConfigurationInvalid` may appear in the API only after a successful status write, while the gauge updated earlier or on a different path.
 - **MCP handshake** — after `Available`, a failed handshake can set status to `MCPEndpointUnavailable` without a second gauge update in the same reconcile.
 
 **Example queries**
@@ -75,7 +79,7 @@ sum by (namespace, type, status, reason) (mcpserver_condition_info)
 ```
 
 ```promql
-sum by (reason) (mcpserver_condition_info{type="Ready", status="False"})
+sum by (reason) (mcpserver_condition_info{type="Available", status="False"})
 ```
 
 ```promql
@@ -87,6 +91,56 @@ histogram_quantile(
   0.99,
   sum(rate(mcpserver_reconcile_phase_duration_seconds_bucket[5m])) by (le, phase)
 )
+```
+
+```promql
+sum(rate(mcpserver_handshake_total{result="failure"}[5m])) by (namespace, name)
+```
+
+```promql
+histogram_quantile(
+  0.99,
+  sum(rate(mcpserver_handshake_duration_seconds_bucket[5m])) by (le)
+)
+```
+
+### Labels for `mcpserver_handshake_total`
+
+| Label | Description |
+| --- | --- |
+| `name` | `MCPServer` name |
+| `namespace` | `MCPServer` namespace |
+| `result` | Handshake outcome (see below) |
+
+**`result` values**
+
+| Value | Meaning |
+| --- | --- |
+| `success` | Handshake completed and the server returned valid MCP capabilities. |
+| `failure` | Handshake failed (server unreachable, protocol error, timeout, etc.). |
+| `auth_skip` | Server returned an HTTP auth error (401/403); treated as reachable without completing the handshake. |
+| `skip` | Handshake was skipped because the endpoint was already verified for the current generation. |
+
+### Labels for `mcpserver_handshake_duration_seconds`
+
+| Label | Description |
+| --- | --- |
+| `name` | `MCPServer` name |
+| `namespace` | `MCPServer` namespace |
+
+Duration is recorded for every handshake attempt (success, failure, or auth_skip) but not for skipped handshakes.
+
+### Labels for `mcpserver_capability_changes_total`
+
+| Label | Description |
+| --- | --- |
+| `name` | `MCPServer` name |
+| `namespace` | `MCPServer` namespace |
+
+**Example query**
+
+```promql
+sum(rate(mcpserver_capability_changes_total[5m])) by (name, namespace)
 ```
 
 ### Labels for failure counters (`mcpserver_*_failures_total`)
@@ -147,13 +201,15 @@ The repository ships an example Grafana dashboard at [`config/grafana/mcp-lifecy
 
 - **Overview** — `MCPServer` count, reconciliation success rate, error rate, and P95 latency
 - **Reconciliation** — duration heatmap, rate by result, requeue rate, and per-phase latency
-- **Resource health** — Accepted/Ready condition breakdown and deployment, Service, and NetworkPolicy failure rates
+- **Resource health** — Accepted/Available condition breakdown and deployment, Service, NetworkPolicy, and gateway binding failure rates
 - **Validation** — validation failures by reason
 - **Performance** — operator CPU/memory, active reconcile workers, and API server request rate
 
 Panels use only metrics that the operator exports today: custom `mcpserver_*` series, controller-runtime `controller_runtime_*` series, and standard Go/process metrics (`process_cpu_seconds_total`, `process_resident_memory_bytes`, `rest_client_requests_total`). Ensure your Prometheus scrape config collects the controller-manager `/metrics` endpoint so these series are available. ConfigMap/Secret watch metrics from early design notes are **not** included because they are not implemented.
 
-Performance panels scope `process_*` and `rest_client_*` queries by operator namespace when Prometheus adds Kubernetes labels during scrape (for example via `ServiceMonitor`). If you scrape the raw `/metrics` endpoint without relabeling, select **All** for the **Operator namespace** dashboard variable.
+Performance panels scope `process_*` and `rest_client_*` queries by operator namespace when Prometheus adds Kubernetes labels during scrape (for example via `ServiceMonitor`). If you scrape the raw `/metrics` endpoint without relabeling, select **All** for the **Operator namespace** dashboard variable. MCPServer resource panels are filtered by the **MCPServer namespace** variable (sourced from `mcpserver_condition_info` labels; defaults to all namespaces). The sample `ServiceMonitor` sets `honorLabels: true` so metric `namespace` labels (the `MCPServer` namespace) are not renamed to `exported_namespace`.
+
+To allow Prometheus pods to reach the metrics port when the controller NetworkPolicy is enabled, label the scrape namespace with `metrics: enabled` (see [`config/network-policy/allow-metrics-traffic.yaml`](https://github.com/kubernetes-sigs/mcp-lifecycle-operator/blob/main/config/network-policy/allow-metrics-traffic.yaml)).
 
 ### Import via Grafana UI
 
@@ -166,12 +222,12 @@ This follows the same **raw JSON + manual import** pattern used by [node-feature
 
 ### Provision with Grafana sidecar (optional)
 
-If you run Grafana with the [kiwigrid sidecar](https://github.com/grafana/helm-charts/tree/main/charts/grafana) (for example via [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack)), apply the labeled ConfigMap from a checkout of this repository:
+If you run Grafana with the [kiwigrid sidecar](https://github.com/grafana/helm-charts/tree/main/charts/grafana) (for example via [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack)), apply the labeled ConfigMap **in the same namespace Grafana runs in** (the sidecar watches its own namespace by default) from a checkout of this repository:
 
 ```bash
 git clone https://github.com/kubernetes-sigs/mcp-lifecycle-operator.git
 cd mcp-lifecycle-operator
-kubectl apply -k config/grafana/
+kubectl apply -k config/grafana/ -n monitoring   # use your Grafana namespace
 ```
 
 The Kustomize overlay sets `grafana_dashboard: "1"` and `grafana_folder: MCP Lifecycle Operator`, matching conventions from [Strimzi](https://github.com/strimzi/strimzi-kafka-operator) and kube-prometheus-stack. The `grafana_folder` annotation requires Grafana Helm values `sidecar.dashboards.folderAnnotation: grafana_folder` and `sidecar.dashboards.provider.foldersFromFilesStructure: true`; otherwise dashboards import successfully but may appear in the default folder.
