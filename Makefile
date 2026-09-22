@@ -326,8 +326,9 @@ deploy-docs-main: ## Deploy main-branch docs preview to gh-pages via mike
 	./hack/mkdocs/deploy.sh main --title "main (preview)"
 
 .PHONY: deploy-docs-release
-deploy-docs-release: ## Deploy release docs to gh-pages (VERSION=v0.1.0)
-	@test -n "$(VERSION)" || (echo "VERSION is required, e.g. make deploy-docs-release VERSION=v0.1.0" && exit 1)
+deploy-docs-release: ## Deploy release docs to gh-pages (VERSION=v0.3.0); optional SOURCE_REF defaults to VERSION
+	@test -n "$(VERSION)" || (echo "VERSION is required, e.g. make deploy-docs-release VERSION=v0.3.0" && exit 1)
+	./hack/mkdocs/prepare-version-sources.sh "$(VERSION)" "$(or $(SOURCE_REF),$(VERSION))"
 	./hack/mkdocs/deploy.sh $(VERSION) latest --set-default
 
 .PHONY: live-docs

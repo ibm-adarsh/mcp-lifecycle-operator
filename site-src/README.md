@@ -8,11 +8,14 @@ This directory contains the source files for the MCP Lifecycle Operator document
 site-src/
 ├── index.md              # Landing page
 ├── introduction.md       # Introduction and overview
-├── operating/            # Day-2 operations (metrics, future topics)
-│   └── metrics.md        # Prometheus metrics reference
+├── operating/            # Day-2 operations
+│   ├── metrics.md
+│   ├── tls.md
+│   └── storage-version-migration.md
 ├── guides/               # Getting started guides
 │   ├── index.md
-│   └── quickstart.md
+│   ├── quickstart.md
+│   └── gateway.md
 ├── reference/            # API reference documentation
 │   └── index.md         # Auto-generated from Go API types
 ├── contributing/         # Contributing guide
@@ -27,7 +30,7 @@ site-src/
 ### Prerequisites
 
 - Docker (recommended for local development)
-- Python 3.11+ with pip (for local development without Docker)
+- Python 3.12+ with pip (for local development without Docker)
 
 ### Local Development
 
@@ -65,7 +68,7 @@ The API reference documentation is auto-generated from Go source code:
 make api-ref-docs
 ```
 
-This creates `site-src/reference/index.md` from the CRD types in `api/v1alpha1/`.
+This creates `site-src/reference/index.md` from the CRD types under `api/` (currently `api/v1alpha1` via `hack/mkdocs/generate.sh` / `crd-ref-docs.yaml`).
 
 **Note**: The generated `index.md` file is not committed to git - it's automatically generated during the build process (`make build-docs`, `make live-docs`, or CI).
 
@@ -81,15 +84,18 @@ Documentation is versioned with [mike](https://github.com/jimporter/mike) and pu
 ### How docs are published
 
 - **Releases**: `.github/workflows/docs.yaml` deploys automatically when a GitHub release is published. The release tag becomes a version; the `latest` alias is updated and set as the default.
-- **Main preview**: The same workflow deploys on every push to `main`.
-- **Manual redeploy**: Use **Actions → Docs → Run workflow** to redeploy a specific tag (useful for bootstrapping or fixing a broken version).
+- **Main preview**: The same workflow deploys on pushes to `main` that touch docs-related paths.
+- **Manual redeploy**: Use **Actions → Docs → Run workflow** to redeploy a specific version (useful for bootstrapping or fixing a broken version).
 
 ### Netlify configuration
 
 Netlify publishes the pre-built `gh-pages` branch (no build step). Complete these steps **in order** after the versioning PR merges:
 
 1. **Merge** the versioning PR to `main`
-2. **Bootstrap `latest`**: run **Actions → Docs → Deploy docs (manual)** with `v0.1.0` (or the current release tag)
+2. **Bootstrap `latest`**: run **Actions → Docs → Deploy docs (manual)** with:
+   - `version`: current release tag (e.g. `v0.3.0`)
+   - `source_ref`: same tag (loads historical `site-src` while keeping mike tooling from `main`)
+   - `update_latest` / `set_default`: true
 3. **Switch Netlify** production branch to `gh-pages` (build command empty, publish `/`)
 
 Until step 3, main-branch production Netlify builds fail by design; the last good production deploy stays live.

@@ -12,7 +12,8 @@
 #
 # Post-merge migration (in order):
 #   1. Merge this PR
-#   2. Run Actions -> Docs -> Deploy docs (manual) for v0.1.0 to bootstrap latest
+#   2. Run Actions -> Docs -> Deploy docs (manual) for the current release tag
+#      (e.g. v0.3.0) with source_ref set to the same tag to bootstrap latest
 #   3. Switch Netlify production branch to gh-pages (empty build, publish /)
 # Until step 3, the last good production deploy stays live.
 [build]

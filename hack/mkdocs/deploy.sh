@@ -20,7 +20,7 @@
 #   deploy.sh <version> [--title <title>] [--set-default] [alias...]
 #
 # Examples:
-#   deploy.sh v0.1.0 latest --set-default          # release (updates latest alias)
+#   deploy.sh v0.3.0 latest --set-default          # release (updates latest alias)
 #   deploy.sh main --title "main (preview)"        # main-branch preview
 
 set -euo pipefail
@@ -76,6 +76,12 @@ fi
 NETLIFY_CONFIG="${SCRIPT_ROOT}/hack/mkdocs/gh-pages-netlify.toml"
 WORKTREE_DIR="$(mktemp -d)"
 
+cleanup() {
+  git worktree remove "${WORKTREE_DIR}" --force 2>/dev/null || true
+  rm -rf "${WORKTREE_DIR}"
+}
+trap cleanup EXIT
+
 echo "Ensuring Netlify configuration on gh-pages..."
 git fetch origin gh-pages
 git worktree add -B gh-pages "${WORKTREE_DIR}" origin/gh-pages
@@ -85,10 +91,8 @@ pushd "${WORKTREE_DIR}" > /dev/null
 if ! git diff --quiet netlify.toml; then
   git add netlify.toml
   git commit -m "Ensure Netlify configuration for gh-pages publishing"
-  git push origin gh-pages
+  git push origin HEAD:gh-pages
 fi
 popd > /dev/null
-
-git worktree remove "${WORKTREE_DIR}" --force
 
 echo "Documentation deployment complete."

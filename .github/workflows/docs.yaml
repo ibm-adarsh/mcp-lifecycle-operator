@@ -7,7 +7,7 @@ on:
       - "mkdocs.yml"
       - "hack/mkdocs/**"
       - "crd-ref-docs.yaml"
-      - "api/v1alpha1/**"
+      - "api/**"
       - ".github/workflows/docs.yaml"
   push:
     branches:
@@ -18,9 +18,14 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to deploy (git tag, e.g. v0.1.0)"
+        description: "Mike version name (git tag, e.g. v0.3.0)"
         required: true
         type: string
+      source_ref:
+        description: "Optional git ref for docs content (default: version tag if it has mike tooling, else this workflow revision)"
+        required: false
+        type: string
+        default: ""
       update_latest:
         description: "Update the latest alias to this version"
         type: boolean
@@ -45,10 +50,10 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - name: Clone the code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
         with:
           go-version-file: go.mod
 
@@ -75,12 +80,13 @@ jobs:
       contents: write
     steps:
       - name: Clone the code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          fetch-tags: true
 
       - name: Setup Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
         with:
           go-version-file: go.mod
 
@@ -109,14 +115,23 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Stay on the workflow revision so mike tooling exists, then load docs
+      # sources from the release tag (see prepare-version-sources.sh).
       - name: Clone the code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.release.tag_name }}
           fetch-depth: 0
+          fetch-tags: true
+
+      - name: Prepare docs sources from release tag
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          # Always load site-src/api from the release tag; keep mike tooling from
+          # the workflow revision (required for tags that predate this workflow).
+          ./hack/mkdocs/prepare-version-sources.sh "${TAG}" "${TAG}"
 
       - name: Setup Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
         with:
           go-version-file: go.mod
 
@@ -145,14 +160,22 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Do not check out inputs.version here: tags that predate mike lack
+      # deploy.sh. Stay on the workflow revision and load content separately.
       - name: Clone the code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.version }}
           fetch-depth: 0
+          fetch-tags: true
+
+      - name: Prepare docs sources
+        env:
+          VERSION: ${{ inputs.version }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: ./hack/mkdocs/prepare-version-sources.sh "${VERSION}" "${SOURCE_REF}"
 
       - name: Setup Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
         with:
           go-version-file: go.mod
 
