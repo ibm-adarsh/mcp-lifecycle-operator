@@ -6,6 +6,10 @@ edit_uri: edit/main/site-src/
 site_dir: site
 docs_dir: site-src
 
+# Contributor README only; the site landing page is index.md.
+exclude_docs: |
+  README.md
+
 theme:
   name: material
   icon:
