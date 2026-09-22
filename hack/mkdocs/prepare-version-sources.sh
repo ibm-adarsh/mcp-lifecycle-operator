@@ -73,8 +73,8 @@ cp hack/mkdocs/gh-pages-netlify.toml "${TOOLING_BACKUP}/gh-pages-netlify.toml"
 cp hack/mkdocs/image/requirements.txt "${TOOLING_BACKUP}/requirements.txt"
 cp hack/mkdocs/prepare-version-sources.sh "${TOOLING_BACKUP}/prepare-version-sources.sh"
 
-# Replace site-src exactly so files added after CONTENT_REF do not leak in.
-git rm -rq --ignore-unmatch site-src
+# Replace site-src and api exactly so files added after CONTENT_REF do not leak in.
+git rm -rq --ignore-unmatch site-src api
 git checkout "${CONTENT_REF}" -- site-src api crd-ref-docs.yaml hack/mkdocs/generate.sh
 
 cp "${TOOLING_BACKUP}/mkdocs.yml" mkdocs.yml

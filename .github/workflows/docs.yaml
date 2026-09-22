@@ -5,6 +5,7 @@ on:
     paths: &docs-paths
       - "site-src/**"
       - "mkdocs.yml"
+      - "Makefile"
       - "hack/mkdocs/**"
       - "crd-ref-docs.yaml"
       - "api/**"
@@ -51,6 +52,8 @@ jobs:
     steps:
       - name: Clone the code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
@@ -124,11 +127,11 @@ jobs:
           fetch-tags: true
 
       - name: Prepare docs sources from release tag
-        run: |
-          TAG="${{ github.event.release.tag_name }}"
-          # Always load site-src/api from the release tag; keep mike tooling from
-          # the workflow revision (required for tags that predate this workflow).
-          ./hack/mkdocs/prepare-version-sources.sh "${TAG}" "${TAG}"
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        # Always load site-src/api from the release tag; keep mike tooling from
+        # the workflow revision (required for tags that predate this workflow).
+        run: ./hack/mkdocs/prepare-version-sources.sh "${TAG}" "${TAG}"
 
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v6
@@ -151,7 +154,17 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Deploy release docs
-        run: ./hack/mkdocs/deploy.sh "${{ github.event.release.tag_name }}" latest --set-default
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          ARGS=("${TAG}")
+          # Prereleases get a versioned docs page but must not become latest
+          # (keeps docs default aligned with GitHub's latest stable release).
+          if [[ "${IS_PRERELEASE}" != "true" ]]; then
+            ARGS+=(latest --set-default)
+          fi
+          ./hack/mkdocs/deploy.sh "${ARGS[@]}"
 
   deploy-manual:
     name: Deploy docs (manual)
