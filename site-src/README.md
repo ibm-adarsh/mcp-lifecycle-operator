@@ -83,9 +83,11 @@ Documentation is versioned with [mike](https://github.com/jimporter/mike) and pu
 
 ### How docs are published
 
-- **Releases**: `.github/workflows/docs.yaml` deploys automatically when a GitHub release is published. The release tag becomes a version; the `latest` alias is updated and set as the default.
+- **Releases**: `.github/workflows/docs.yaml` deploys automatically when a GitHub release is published. The release tag becomes a version; the `latest` alias is updated and the deployed version is set as the default. Prereleases are published without changing `latest` or the default.
 - **Main preview**: The same workflow deploys on pushes to `main` that touch docs-related paths.
 - **Manual redeploy**: Use **Actions → Docs → Run workflow** to redeploy a specific version (useful for bootstrapping or fixing a broken version).
+
+Manual deployments load docs and API sources from `version` by default, including tags that predate mike. Set `source_ref` to explicitly use a different content ref. Missing refs or required sources fail the deployment; they never silently fall back to current docs. Older tags missing API-reference build tooling use the workflow copies of those files. `set_default` selects the version being deployed, independently of `update_latest`.
 
 ### Netlify configuration
 

@@ -23,7 +23,7 @@ on:
         required: true
         type: string
       source_ref:
-        description: "Optional git ref for docs content (default: version tag if it has mike tooling, else this workflow revision)"
+        description: "Optional git ref for docs content (default: version tag; ref must contain site-src and api)"
         required: false
         type: string
         default: ""
@@ -32,7 +32,7 @@ on:
         type: boolean
         default: true
       set_default:
-        description: "Set latest as the default site version"
+        description: "Set the deployed version as the default site version"
         type: boolean
         default: true
 

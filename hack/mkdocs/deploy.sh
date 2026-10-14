@@ -69,8 +69,8 @@ echo "Deploying documentation version ${VERSION}..."
 mike "${MIKE_ARGS[@]}"
 
 if [[ "${SET_DEFAULT}" == "true" ]]; then
-  echo "Setting default version to latest..."
-  mike set-default --push latest
+  echo "Setting default version to ${VERSION}..."
+  mike set-default --push "${VERSION}"
 fi
 
 NETLIFY_CONFIG="${SCRIPT_ROOT}/hack/mkdocs/gh-pages-netlify.toml"
@@ -84,7 +84,7 @@ trap cleanup EXIT
 
 echo "Ensuring Netlify configuration on gh-pages..."
 git fetch origin gh-pages
-git worktree add -B gh-pages "${WORKTREE_DIR}" origin/gh-pages
+git worktree add --detach "${WORKTREE_DIR}" origin/gh-pages
 cp "${NETLIFY_CONFIG}" "${WORKTREE_DIR}/netlify.toml"
 
 pushd "${WORKTREE_DIR}" > /dev/null

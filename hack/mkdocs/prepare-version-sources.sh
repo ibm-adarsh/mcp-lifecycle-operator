@@ -19,15 +19,9 @@
 # Usage:
 #   prepare-version-sources.sh <version> [source_ref]
 #
-# The workflow commit (mike tooling, mkdocs.yml with the mike provider, deploy
-# scripts) stays in place. Docs content is taken from:
-#   1. source_ref, if provided
-#   2. else <version> when that ref includes hack/mkdocs/deploy.sh
-#   3. else the workflow commit (bootstrap for tags that predate mike)
-#
-# Always keeps the workflow-branch copies of:
-#   mkdocs.yml, hack/mkdocs/deploy.sh, hack/mkdocs/gh-pages-netlify.toml,
-#   hack/mkdocs/image/requirements.txt
+# Keep workflow tooling in place and load docs/API content from source_ref,
+# or from <version> when no override is supplied. Missing content refs fail
+# rather than publishing workflow content under a historical version name.
 
 set -euo pipefail
 
@@ -37,50 +31,35 @@ cd "${SCRIPT_ROOT}"
 VERSION="${1:?version required}"
 SOURCE_REF="${2:-}"
 
-ref_has_deploy_tooling() {
-  local ref="$1"
-  git cat-file -e "${ref}:hack/mkdocs/deploy.sh" 2>/dev/null
-}
+CONTENT_REF="${SOURCE_REF:-${VERSION}}"
 
-resolve_content_ref() {
-  if [[ -n "${SOURCE_REF}" ]]; then
-    echo "${SOURCE_REF}"
-    return
-  fi
-  if git rev-parse --verify "${VERSION}^{commit}" >/dev/null 2>&1 && ref_has_deploy_tooling "${VERSION}"; then
-    echo "${VERSION}"
-    return
-  fi
-  echo ""
-}
-
-CONTENT_REF="$(resolve_content_ref)"
-
-if [[ -z "${CONTENT_REF}" ]]; then
-  echo "Building docs from the workflow revision (labeling as mike version ${VERSION})."
-  echo "Tag/ref '${VERSION}' is missing mike deploy tooling or was not provided as source_ref."
-  exit 0
+# Validate required sources before changing the working tree.
+if ! git rev-parse --verify "${CONTENT_REF}^{commit}" >/dev/null 2>&1; then
+  echo "ERROR: Documentation source ref '${CONTENT_REF}' does not exist. Fetch it or provide source_ref explicitly." >&2
+  exit 1
 fi
+for path in site-src api; do
+  if ! git cat-file -e "${CONTENT_REF}:${path}" 2>/dev/null; then
+    echo "ERROR: Documentation source ref '${CONTENT_REF}' is missing ${path}. Provide a source_ref containing docs and API sources." >&2
+    exit 1
+  fi
+done
+
+# Older tags may lack API-reference build tooling. Keep the workflow copy of
+# each missing file, while always using the selected ref's docs and API types.
+CONTENT_PATHS=(site-src api)
+for path in crd-ref-docs.yaml hack/mkdocs/generate.sh; do
+  if git cat-file -e "${CONTENT_REF}:${path}" 2>/dev/null; then
+    CONTENT_PATHS+=("${path}")
+  else
+    echo "WARNING: ${CONTENT_REF} lacks ${path}; using workflow tooling." >&2
+  fi
+done
 
 echo "Loading documentation sources from ${CONTENT_REF} (mike version ${VERSION})..."
 
-# Preserve workflow-branch tooling that must not be overwritten by older tags.
-TOOLING_BACKUP="$(mktemp -d)"
-trap 'rm -rf "${TOOLING_BACKUP}"' EXIT
-cp mkdocs.yml "${TOOLING_BACKUP}/mkdocs.yml"
-cp hack/mkdocs/deploy.sh "${TOOLING_BACKUP}/deploy.sh"
-cp hack/mkdocs/gh-pages-netlify.toml "${TOOLING_BACKUP}/gh-pages-netlify.toml"
-cp hack/mkdocs/image/requirements.txt "${TOOLING_BACKUP}/requirements.txt"
-cp hack/mkdocs/prepare-version-sources.sh "${TOOLING_BACKUP}/prepare-version-sources.sh"
-
 # Replace site-src and api exactly so files added after CONTENT_REF do not leak in.
 git rm -rq --ignore-unmatch site-src api
-git checkout "${CONTENT_REF}" -- site-src api crd-ref-docs.yaml hack/mkdocs/generate.sh
-
-cp "${TOOLING_BACKUP}/mkdocs.yml" mkdocs.yml
-cp "${TOOLING_BACKUP}/deploy.sh" hack/mkdocs/deploy.sh
-cp "${TOOLING_BACKUP}/gh-pages-netlify.toml" hack/mkdocs/gh-pages-netlify.toml
-cp "${TOOLING_BACKUP}/requirements.txt" hack/mkdocs/image/requirements.txt
-cp "${TOOLING_BACKUP}/prepare-version-sources.sh" hack/mkdocs/prepare-version-sources.sh
+git checkout "${CONTENT_REF}" -- "${CONTENT_PATHS[@]}"
 
 echo "Documentation sources ready."
