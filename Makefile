@@ -326,7 +326,7 @@ deploy-docs-main: ## Deploy main-branch docs preview to gh-pages via mike
 	./hack/mkdocs/deploy.sh main --title "main (preview)"
 
 .PHONY: deploy-docs-release
-deploy-docs-release: ## Deploy release docs to gh-pages (VERSION=v0.3.0); optional SOURCE_REF defaults to VERSION
+deploy-docs-release: ## Deploy release docs to gh-pages (VERSION=v0.3.0); optional SOURCE_REF; ALLOW_DIRTY_DOCS_SOURCES=1 to override dirty tree guard
 	@test -n "$(VERSION)" || (echo "VERSION is required, e.g. make deploy-docs-release VERSION=v0.3.0" && exit 1)
 	./hack/mkdocs/prepare-version-sources.sh "$(VERSION)" "$(or $(SOURCE_REF),$(VERSION))"
 	./hack/mkdocs/deploy.sh $(VERSION) latest --set-default

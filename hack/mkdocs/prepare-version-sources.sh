@@ -22,6 +22,9 @@
 # Keep workflow tooling in place and load docs/API content from source_ref,
 # or from <version> when no override is supplied. Missing content refs fail
 # rather than publishing workflow content under a historical version name.
+#
+# Refuses to run when site-src/ or api/ have local modifications (CI checkouts
+# are clean). Set ALLOW_DIRTY_DOCS_SOURCES=1 to override deliberately.
 
 set -euo pipefail
 
@@ -45,6 +48,16 @@ for path in site-src api; do
   fi
 done
 
+if [[ -z "${ALLOW_DIRTY_DOCS_SOURCES:-}" ]]; then
+  dirty="$(git status --porcelain -- site-src api)"
+  if [[ -n "${dirty}" ]]; then
+    echo "ERROR: Refusing to overwrite dirty site-src/ or api/ working tree:" >&2
+    echo "${dirty}" >&2
+    echo "Commit or stash local changes, or set ALLOW_DIRTY_DOCS_SOURCES=1 to override." >&2
+    exit 1
+  fi
+fi
+
 # Older tags may lack API-reference build tooling. Keep the workflow copy of
 # each missing file, while always using the selected ref's docs and API types.
 CONTENT_PATHS=(site-src api)
@@ -59,7 +72,8 @@ done
 echo "Loading documentation sources from ${CONTENT_REF} (mike version ${VERSION})..."
 
 # Replace site-src and api exactly so files added after CONTENT_REF do not leak in.
-git rm -rq --ignore-unmatch site-src api
+# -f is safe here: we already refused a dirty tree unless ALLOW_DIRTY_DOCS_SOURCES=1.
+git rm -rqf --ignore-unmatch site-src api
 git checkout "${CONTENT_REF}" -- "${CONTENT_PATHS[@]}"
 
 echo "Documentation sources ready."

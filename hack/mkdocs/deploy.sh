@@ -88,8 +88,10 @@ git worktree add --detach "${WORKTREE_DIR}" origin/gh-pages
 cp "${NETLIFY_CONFIG}" "${WORKTREE_DIR}/netlify.toml"
 
 pushd "${WORKTREE_DIR}" > /dev/null
-if ! git diff --quiet netlify.toml; then
-  git add netlify.toml
+# Stage first: git diff ignores untracked files, so a bootstrap deploy that
+# creates netlify.toml on a bare gh-pages branch would otherwise skip the commit.
+git add netlify.toml
+if ! git diff --cached --quiet netlify.toml; then
   git commit -m "Ensure Netlify configuration for gh-pages publishing"
   git push origin HEAD:gh-pages
 fi
