@@ -48,7 +48,8 @@ for path in site-src api; do
   fi
 done
 
-if [[ -z "${ALLOW_DIRTY_DOCS_SOURCES:-}" ]]; then
+# Only the documented value "1" disables the guard; 0/false/other stay protected.
+if [[ "${ALLOW_DIRTY_DOCS_SOURCES:-}" != "1" ]]; then
   dirty="$(git status --porcelain -- site-src api)"
   if [[ -n "${dirty}" ]]; then
     echo "ERROR: Refusing to overwrite dirty site-src/ or api/ working tree:" >&2
